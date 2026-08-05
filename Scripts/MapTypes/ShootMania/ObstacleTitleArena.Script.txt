@@ -3,6 +3,7 @@
 #Include "TextLib" as TL
 #Include "MathLib" as ML
 #Include "Libs/miltant/Nadeo_Fork/MapType.Script.txt" as MapType
+#Include "Libs/smokegun/Constants.Script.txt" as Constants
 
 declare Ident G_LastAnchorId;
 declare Ident[] G_AnchorCache;
@@ -142,6 +143,26 @@ Text Select5(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _
                 <label id="{{{_Option4}}}"  pos="16 -2" size="16 6" text="{{{_Option4}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
                 <label id="{{{_Option5}}}"  pos="32 -2" size="16 6" text="{{{_Option5}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
                 <quad  id="{{{_Selector}}}" pos="-40 1"   size="16 7" bgcolor="4777C1FF"/>
+            </frame>
+            <quad pos="0 0.5" size="81 6.1" bgcolor="797979AA" halign="center"/>
+        </frame>
+    """;
+}
+
+Text Select8(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _Option4, Text _Option5, Text _Option6, Text _Option7, Text _Option8, Text _Selector)
+{
+    return """
+        <frame pos="{{{_Position}}}">
+            <frame clip="True" clipposn="0 -2.5" clipsizen="80 5" halign="center">
+                <label id="{{{_Option1}}}"  pos="-35 -2"  size="10 6" text="{{{_Option1}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <label id="{{{_Option2}}}"  pos="-25 -2"  size="10 6" text="{{{_Option2}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <label id="{{{_Option3}}}"  pos="-15 -2"  size="10 6" text="{{{_Option3}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <label id="{{{_Option4}}}"  pos="-5 -2"   size="10 6" text="{{{_Option4}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <label id="{{{_Option5}}}"  pos="5 -2"    size="10 6" text="{{{_Option5}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <label id="{{{_Option6}}}"  pos="15 -2"   size="10 6" text="{{{_Option6}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <label id="{{{_Option7}}}"  pos="25 -2"   size="10 6" text="{{{_Option7}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <label id="{{{_Option8}}}"  pos="35 -2"   size="10 6" text="{{{_Option8}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
+                <quad  id="{{{_Selector}}}" pos="-40 1"   size="10 7" bgcolor="4777C1FF"/>
             </frame>
             <quad pos="0 0.5" size="81 6.1" bgcolor="797979AA" halign="center"/>
         </frame>
@@ -1606,6 +1627,253 @@ Void SaveAmmoItemSettings()
     Meta_GrantAmmoCooldown = Cooldown;
 }
 
+Void EditTrampolineItem(CAnchorData _Item)
+{
+    /// --- Variables
+    // Launch parameters (encoding v2, see Actions/Trampoline.Script.txt):
+    // up/down/horizontal blast strength 0..9 (0 = off), compass 0..7 = N..NW clockwise.
+    declare metadata Meta_TrampolineUp for _Item = Constants::C_TrampolineDefaultUp;
+    declare metadata Meta_TrampolineDown for _Item = Constants::C_TrampolineDefaultDown;
+    declare metadata Meta_TrampolineCompass for _Item = Constants::C_TrampolineDefaultCompass;
+    declare metadata Meta_TrampolineHoriz for _Item = Constants::C_TrampolineDefaultHoriz;
+    declare metadata Meta_TrampolineWaitGround for _Item = Constants::C_TrampolineDefaultWaitGround;
+    declare metadata Meta_TrampolineDelay for _Item = Constants::C_TrampolineDefaultDelay;
+
+    declare Integer TrampUp for ManialinkPage = 0;
+    declare Integer TrampDown for ManialinkPage = 0;
+    declare Integer TrampHoriz for ManialinkPage = 0;
+    declare Integer TrampCompass for ManialinkPage = 0;
+    declare Boolean TrampWaitGround for ManialinkPage = False;
+    declare Integer TrampDelay for ManialinkPage = 0;
+    TrampUp = ML::Clamp(Meta_TrampolineUp, 0, 9);
+    TrampDown = ML::Clamp(Meta_TrampolineDown, 0, 9);
+    TrampHoriz = ML::Clamp(Meta_TrampolineHoriz, 0, 9);
+    TrampCompass = ML::Clamp(Meta_TrampolineCompass, 0, 7);
+    TrampWaitGround = Meta_TrampolineWaitGround;
+    TrampDelay = ML::Clamp(Meta_TrampolineDelay, 0, Constants::C_TrampolineDelayMax);
+
+    /// --- Manialink
+    declare Properties = """
+        <frame id="Basic" pos="0 25">
+            {{{BigProperty("0 -2.5", "Strength Up", PlusMinus("7 -4.75", "+", "UpPlus") ^ PlusMinus("7 -7.25", "-", "UpMinus") ^ Entry("-1 -6", "Entry_TrampUp"))}}}
+            <label pos="0 -13" size="78 6" text="In order to be launched up, the player needs to be touching the ground." textsize="1" class="text" halign="center" valign="top" autonewline="1"/>
+            <label pos="-3 -20" size="52 5" text="Wait until touching ground" textsize="2" class="text" halign="center" valign="center2"/>
+            {{{Checkbox("21 -20", "Checkbox_TrampWaitGround")}}}
+            {{{BigProperty("0 -26.5", "Strength Down", PlusMinus("7 -4.75", "+", "DownPlus") ^ PlusMinus("7 -7.25", "-", "DownMinus") ^ Entry("-1 -6", "Entry_TrampDown"))}}}
+            {{{BigProperty("0 -39.5", "Strength Side", PlusMinus("7 -4.75", "+", "HorizPlus") ^ PlusMinus("7 -7.25", "-", "HorizMinus") ^ Entry("-1 -6", "Entry_TrampHoriz"))}}}
+            {{{BigProperty("0 -52.5", "Direction", Select8("0 -6.5", "N", "NE", "E", "SE", "S", "SW", "W", "NW", "Compass_Selector"))}}}
+            {{{BigProperty("0 -65.5", "Delay before Launching", Entry("0 -6.5", "Entry_TrampDelay"))}}}
+            <label pos="13 -72" size="10 4" text="ms" textsize="1" class="text" halign="left" valign="center2"/>
+        </frame>
+    """;
+
+    SetWindow(MakeWindowWithoutEnabled("Edit Trampoline Item", Properties));
+
+    ManialinkText = """
+    <manialink version="3" name="Obstacle:EditTrampolineItem">
+    {{{GetML()}}}
+    <script><!--
+    #Include "TextLib" as TL
+
+    Integer Clamp0_9(Integer _Value) {
+        if (_Value < 0) {
+            return 0;
+        }
+        if (_Value > 9) {
+            return 9;
+        }
+        return _Value;
+    }
+
+    Integer ClampDelay(Integer _Value) {
+        if (_Value < 0) {
+            return 0;
+        }
+        if (_Value > {{{TL::ToText(Constants::C_TrampolineDelayMax)}}}) {
+            return {{{TL::ToText(Constants::C_TrampolineDelayMax)}}};
+        }
+        return _Value;
+    }
+
+    Void UpdateView() {
+        declare Integer TrampUp for Page;
+        declare Integer TrampDown for Page;
+        declare Integer TrampHoriz for Page;
+        declare Integer TrampCompass for Page;
+        declare Boolean TrampWaitGround for Page;
+        declare Integer TrampDelay for Page;
+
+        declare Entry_TrampUp <=> (Page.GetFirstChild("Entry_TrampUp") as CMlEntry);
+        Entry_TrampUp.SetText(TL::ToText(TrampUp), False);
+        declare Entry_TrampDown <=> (Page.GetFirstChild("Entry_TrampDown") as CMlEntry);
+        Entry_TrampDown.SetText(TL::ToText(TrampDown), False);
+        declare Entry_TrampHoriz <=> (Page.GetFirstChild("Entry_TrampHoriz") as CMlEntry);
+        Entry_TrampHoriz.SetText(TL::ToText(TrampHoriz), False);
+        declare Entry_TrampDelay <=> (Page.GetFirstChild("Entry_TrampDelay") as CMlEntry);
+        Entry_TrampDelay.SetText(TL::ToText(TrampDelay), False);
+
+        declare Label_WaitGround <=> (Page.GetFirstChild("Checkbox_TrampWaitGround") as CMlLabel);
+        if (TrampWaitGround && Label_WaitGround.Value != "✖") {
+            Label_WaitGround.SetText("✖");
+        }
+        if (!TrampWaitGround && Label_WaitGround.Value != "") {
+            Label_WaitGround.SetText("");
+        }
+
+        declare Quad_Compass_Selector <=> (Page.GetFirstChild("Compass_Selector") as CMlQuad);
+        Quad_Compass_Selector.RelativePosition_V3.X = -40. + TrampCompass*10.;
+
+        SendCustomEvent("Event_Save_TrampolineItem", Text[]);
+    }
+
+    main() {
+        declare Integer TrampUp for Page;
+        declare Integer TrampDown for Page;
+        declare Integer TrampHoriz for Page;
+        declare Integer TrampCompass for Page;
+        declare Boolean TrampWaitGround for Page;
+        declare Integer TrampDelay for Page;
+        declare NeedUpdate = False;
+        UpdateView();
+
+        while (True) {
+            yield;
+
+            if (NeedUpdate) {
+                UpdateView();
+                NeedUpdate = False;
+            }
+
+            foreach (Event in PendingEvents) {
+                switch (Event.Type){
+                    case CMlScriptEvent::Type::MouseClick: {
+                        switch (Event.ControlId) {
+                            case "Window_Background":
+                                SendCustomEvent("Event_Property_Window_Clicked", Text[]);
+                            case "UpPlus": {
+                                TrampUp = Clamp0_9(TrampUp + 1);
+                                NeedUpdate = True;
+                            }
+                            case "UpMinus": {
+                                TrampUp = Clamp0_9(TrampUp - 1);
+                                NeedUpdate = True;
+                            }
+                            case "DownPlus": {
+                                TrampDown = Clamp0_9(TrampDown + 1);
+                                NeedUpdate = True;
+                            }
+                            case "DownMinus": {
+                                TrampDown = Clamp0_9(TrampDown - 1);
+                                NeedUpdate = True;
+                            }
+                            case "HorizPlus": {
+                                TrampHoriz = Clamp0_9(TrampHoriz + 1);
+                                NeedUpdate = True;
+                            }
+                            case "HorizMinus": {
+                                TrampHoriz = Clamp0_9(TrampHoriz - 1);
+                                NeedUpdate = True;
+                            }
+                            case "N": {
+                                TrampCompass = 0;
+                                NeedUpdate = True;
+                            }
+                            case "NE": {
+                                TrampCompass = 1;
+                                NeedUpdate = True;
+                            }
+                            case "E": {
+                                TrampCompass = 2;
+                                NeedUpdate = True;
+                            }
+                            case "SE": {
+                                TrampCompass = 3;
+                                NeedUpdate = True;
+                            }
+                            case "S": {
+                                TrampCompass = 4;
+                                NeedUpdate = True;
+                            }
+                            case "SW": {
+                                TrampCompass = 5;
+                                NeedUpdate = True;
+                            }
+                            case "W": {
+                                TrampCompass = 6;
+                                NeedUpdate = True;
+                            }
+                            case "NW": {
+                                TrampCompass = 7;
+                                NeedUpdate = True;
+                            }
+                            case "Checkbox_TrampWaitGround": {
+                                TrampWaitGround = !TrampWaitGround;
+                                if (TrampWaitGround && TrampDelay == 0) {
+                                    TrampDelay = 5;
+                                }
+                                NeedUpdate = True;
+                            }
+                        }
+                    }
+                    case CMlScriptEvent::Type::EntrySubmit: {
+                        declare Entry <=> (Event.Control as CMlEntry);
+                        switch(Entry.ControlId) {
+                            case "Entry_TrampUp": {
+                                TrampUp = Clamp0_9(TL::ToInteger(Entry.Value));
+                            }
+                            case "Entry_TrampDown": {
+                                TrampDown = Clamp0_9(TL::ToInteger(Entry.Value));
+                            }
+                            case "Entry_TrampHoriz": {
+                                TrampHoriz = Clamp0_9(TL::ToInteger(Entry.Value));
+                            }
+                            case "Entry_TrampDelay": {
+                                TrampDelay = ClampDelay(TL::ToInteger(Entry.Value));
+                            }
+                        }
+                        NeedUpdate = True;
+                    }
+                }
+            }
+        }
+    }
+    --></script>
+    </manialink>
+    """;
+}
+
+Void SaveTrampolineItemSettings()
+{
+    if (!AnchorData.existskey(G_LastAnchorId)) {
+        return;
+    }
+
+    declare Anchor <=> AnchorData[G_LastAnchorId];
+    if (Anchor.Tag != "Trampoline") {
+        return;
+    }
+
+    declare Integer TrampUp for ManialinkPage = 0;
+    declare Integer TrampDown for ManialinkPage = 0;
+    declare Integer TrampHoriz for ManialinkPage = 0;
+    declare Integer TrampCompass for ManialinkPage = 0;
+    declare Boolean TrampWaitGround for ManialinkPage = False;
+    declare Integer TrampDelay for ManialinkPage = 0;
+
+    declare metadata Meta_TrampolineUp for Anchor = Constants::C_TrampolineDefaultUp;
+    declare metadata Meta_TrampolineDown for Anchor = Constants::C_TrampolineDefaultDown;
+    declare metadata Meta_TrampolineCompass for Anchor = Constants::C_TrampolineDefaultCompass;
+    declare metadata Meta_TrampolineHoriz for Anchor = Constants::C_TrampolineDefaultHoriz;
+    declare metadata Meta_TrampolineWaitGround for Anchor = Constants::C_TrampolineDefaultWaitGround;
+    declare metadata Meta_TrampolineDelay for Anchor = Constants::C_TrampolineDefaultDelay;
+    Meta_TrampolineUp = ML::Clamp(TrampUp, 0, 9);
+    Meta_TrampolineDown = ML::Clamp(TrampDown, 0, 9);
+    Meta_TrampolineCompass = ML::Clamp(TrampCompass, 0, 7);
+    Meta_TrampolineHoriz = ML::Clamp(TrampHoriz, 0, 9);
+    Meta_TrampolineWaitGround = TrampWaitGround;
+    Meta_TrampolineDelay = ML::Clamp(TrampDelay, 0, Constants::C_TrampolineDelayMax);
+}
+
 ///////////////////////////////////////////////////////////////abc
 Void EditDynamic(CAnchorData _Item) {
 
@@ -2242,6 +2510,8 @@ Void Loop()
                         EditAmmoItem(Anchor);
                     case "OffzoneShield":
                         EditOffzoneShieldItem(Anchor);
+                    case "Trampoline":
+                        EditTrampolineItem(Anchor);
                     default :
                         continue;
                 }
@@ -2359,6 +2629,9 @@ Void Loop()
                     }
                     case "Event_Save_OffzoneShieldItem": {
                         SaveOffzoneShieldItemSettings();
+                    }
+                    case "Event_Save_TrampolineItem": {
+                        SaveTrampolineItemSettings();
                     }
 										case "Event_Save_ItemProperties": {
 												SaveItemProperties();

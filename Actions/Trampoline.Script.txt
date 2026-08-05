@@ -1,0 +1,120 @@
+#RequireContext CSmAction
+
+// =====================================================================
+// Trampoline action — encoding v2. FROZEN once built into the Gbx.
+// The mode arms us via ActionSetVariant (Variant == 0 = disarmed):
+//   Variant = 10000 + Up*1000 + Down*100 + Compass*10 + Horiz
+//   Up/Down/Horiz = blast strength 0..9 (0 = no bullet on that component)
+//   Compass = 0..7 -> C_CompassDir (index i = i*45 deg from +Z toward +X).
+// N<->world calibration and the both-vertical policy live MODE-SIDE
+// (Constants::C_TrampolineCompass*, C_TrampolineAllowBothVertical), so
+// this Gbx never needs a rebuild for calibration or policy changes.
+// C_VariantBase must match Constants::C_TrampolineVariantBase.
+// State_Boolean1 = already fired (reset when the mode zeroes the variant).
+// =====================================================================
+#Const C_VariantBase 10000
+#Const C_VariantMax  19979	// base + 9*1000 + 9*100 + 7*10 + 9
+
+// Projectile models, index = strength - 1. All: self-exploding (very short
+// lifetime), Blow Radius Attenuation 0 (position-independent force).
+// TrampV1-9: high Blow Vertical Scale. TrampH1-9: Blow Vertical Scale 0,
+// higher overall strengths.
+#Const C_VerticalProjectiles [
+	"TrampV1", "TrampV2", "TrampV3", "TrampV4", "TrampV5",
+	"TrampV6", "TrampV7", "TrampV8", "TrampV9"
+]
+#Const C_HorizontalProjectiles [
+	"TrampH1", "TrampH2", "TrampH3", "TrampH4", "TrampH5",
+	"TrampH6", "TrampH7", "TrampH8", "TrampH9"
+]
+#Const C_FallbackProjectile "TrampV1"
+
+// One shared "effect" projectile fired once per launch (any variant) to carry the
+// launch feedback: particle burst + sound. Author it once in the Action Maker as a
+// harmless bullet — Blow strength 0, Damage 0, Explode-On-All-Players OFF, very short
+// lifetime — so it never pushes or hurts anyone and never stacks with the directional
+// bullets. NOT routed through GetProjectileId (whose fallback is a real launch bullet):
+// until this model exists the effect is simply skipped, never double-launching.
+#Const C_EffectProjectile "TrampFX"
+
+// Compass table: index i = i*45 deg, rotating from world +Z toward +X.
+// Which index the editor's "N" means is the mode's business, not ours.
+#Const C_CompassDir [
+	<0., 0., 1.>,  <0.7071, 0., 0.7071>,   <1., 0., 0.>,  <0.7071, 0., -0.7071>,
+	<0., 0., -1.>, <-0.7071, 0., -0.7071>, <-1., 0., 0.>, <-0.7071, 0., 0.7071>
+]
+
+// Tuning knobs (world units)
+#Const C_HorizontalOffset	0.8		// how far beside the player the horizontal bullet spawns
+#Const C_HorizontalHeight	0.5		// height above the feet for the horizontal bullet
+#Const C_UpwardOffset		0.15	// just above the feet — anything below ground level detonates
+									// under the floor surface and the blast does nothing
+#Const C_DownwardOffset		2.2		// above the head, shooting up, for downward launches
+#Const C_EffectHeight		1.0		// height above the feet for the TrampFX feedback bullet
+
+Ident GetProjectileId(Text _ModelName) {
+	declare ModelId = Projectile_GetModelId(_ModelName);
+	if (ModelId == NullId) {
+		ModelId = Projectile_GetModelId(C_FallbackProjectile);
+	}
+	return ModelId;
+}
+
+main() {
+	if (Variant == 0) {
+		State_Boolean1 = False;
+	} else if (!State_Boolean1 && Owner != Null && Owner.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned) {
+		State_Boolean1 = True;
+
+		// Echo the fired variant to the mode: it disarms us (resets the variant) and closes the PvP window
+		SendRulesEvent("trampoline", [""^Variant], Owner, Null);
+
+		if (Variant >= C_VariantBase && Variant <= C_VariantMax) {
+			declare Packed  = Variant - C_VariantBase;
+			declare Up      = Packed / 1000;
+			declare Down    = (Packed / 100) % 10;
+			declare Compass = (Packed / 10) % 10;
+			declare Horiz   = Packed % 10;
+			if (Compass > 7) {
+				Compass = 0;	// defensive: the encoder never sends 8/9
+			}
+
+			declare LastProjectileId = NullId;
+
+			// Horizontal push: self-exploding bullet beside the player,
+			// opposite the launch direction, aimed/moving outward.
+			if (Horiz > 0) {
+				declare LaunchDir = C_CompassDir[Compass];
+				declare Out = <-LaunchDir.X, 0., -LaunchDir.Z>;
+				declare Position = Owner.Position + <Out.X * C_HorizontalOffset, C_HorizontalHeight, Out.Z * C_HorizontalOffset>;
+				LastProjectileId = Projectile_CreateAtLocation(GetProjectileId(C_HorizontalProjectiles[Horiz - 1]), Null, Position, Out, Out);
+			}
+
+			// Vertical pushes: both may fire; the MODE decides the policy
+			// (it zeroes the down digit when both-vertical is disallowed).
+			if (Up > 0) {
+				declare Position = Owner.Position + <0., C_UpwardOffset, 0.>;
+				LastProjectileId = Projectile_CreateAtLocation(GetProjectileId(C_VerticalProjectiles[Up - 1]), Null, Position, <0., -1., 0.>, <0., -1., 0.>);
+			}
+			if (Down > 0) {
+				declare Position = Owner.Position + <0., C_DownwardOffset, 0.>;
+				LastProjectileId = Projectile_CreateAtLocation(GetProjectileId(C_VerticalProjectiles[Down - 1]), Null, Position, <0., 1., 0.>, <0., 1., 0.>);
+			}
+
+			// Launch feedback (particles + sound), fired last so the directional bullets
+			// above are created first — though all spawn on the same tick (main() never
+			// yields), so this doesn't delay them. One shot per launch, so it can't stack
+			// the way per-bullet effects do. Skipped while the model is absent — no
+			// GetProjectileId fallback, so no accidental extra launch. Explodes in place
+			// (zero velocity); direction is irrelevant but kept non-zero.
+			declare EffectModelId = Projectile_GetModelId(C_EffectProjectile);
+			if (EffectModelId != NullId) {
+				declare EffectPosition = Owner.Position + <0., C_EffectHeight, 0.>;
+				// capture the returned Ident (like the directional calls) so it isn't discarded
+				LastProjectileId = Projectile_CreateAtLocation(EffectModelId, Null, EffectPosition, <0., 1., 0.>, <0., 0., 0.>);
+			}
+
+			State_EntityId1 = LastProjectileId;
+		}
+	}
+}

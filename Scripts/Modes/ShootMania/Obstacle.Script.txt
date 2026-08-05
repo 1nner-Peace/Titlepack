@@ -105,6 +105,10 @@ declare Ident   G_InvisibleSkinId;
 declare Ident   G_ObstacleModelId;
 declare Boolean G_ForceInvisibleSkin;
 declare Ident   G_WayPointSpawn;
+declare Ident   G_TrampolineActionId;
+declare Integer G_TrampolinePvPWindowEnd;
+declare Boolean G_TrampolinePvPRestore;
+declare Integer G_TrampolinePvPInFlight;	// launches armed but not yet confirmed fired; the window only collapses when this hits 0
 declare Boolean[Ident] G_PendingRS;
 
 declare Boolean G_LastUsePvPWeapons;
@@ -227,6 +231,14 @@ UpdateSettings();
 SM::SetupDefaultVisibility();
 
 Obstacle::LoadActions();
+
+// Trampoline: reset runtime state, then load the action (Actions/Trampoline.Action.Gbx, package root)
+G_TrampolinePvPWindowEnd = 0;
+G_TrampolinePvPRestore = False;
+G_TrampolinePvPInFlight = 0;
+ActionList_Begin();
+G_TrampolineActionId = ActionList_Add("Trampoline.Action.Gbx");
+ActionList_End();
 ***
 
 ***Match_InitMap***
@@ -329,6 +341,7 @@ Items::Place();
 foreach (Player in AllPlayers) {
     Player::setInitialized(Player, False);
     Obstacle::NewPlayer(Player);
+    LoadTrampolineAction(Player);
 }
 
 ---Ladder_OpenMatch_All---
@@ -435,6 +448,14 @@ Layers::Create("RespawnBehavior", RespawnBehavior::GetLayer(False));
 //Replay_SaveInterface();
 Dynamics::Compute();
 
+// Close the PvP window opened for a trampoline launch (opened on touch, collapsed on the fire echo)
+if (G_TrampolinePvPWindowEnd > 0 && Now > G_TrampolinePvPWindowEnd) {
+    G_TrampolinePvPWindowEnd = 0;
+    G_TrampolinePvPInFlight = 0;	// window closed -> nothing can still be waiting on it (self-heals a lost-echo leak)
+    UsePvPWeapons = G_TrampolinePvPRestore;
+    G_LastUsePvPWeapons = UsePvPWeapons;
+}
+
 // If a new event edition was loaded, notify the UI
 if (ObsEvents::Loop()) {
     EventsUI::UpdateActiveEvents();
@@ -481,7 +502,7 @@ foreach (Event in PendingEvents) {
     switch (Event.Type) {
 				case CSmModeEvent::EType::OnShoot: {
 					//Dynamics::Info();
-					
+
 				}
         case CSmModeEvent::EType::OnArmorEmpty: {
             // Discard the defaut behaviour (e.g Player is eliminated)
@@ -517,6 +538,47 @@ foreach (Event in PendingEvents) {
 
         case CSmModeEvent::EType::OnActionCustomEvent : {
             // :'(
+
+            // Events from the trampoline action. The frozen Gbx still emits a periodic "hb"
+            // liveness ping (harmless); only the fire echo — the variant it launched with — matters.
+            if (Event.Param1 == "trampoline") {
+                declare Payload = "?";
+                if (Event.Param2.count > 0) Payload = Event.Param2[0];
+                if (Payload != "hb") {
+                    switchtype (Event.ShooterEntity) {
+                        case CSmPlayer: {
+                            declare Shooter = (Event.ShooterEntity as CSmPlayer);
+                            declare EchoedVariant = TL::ToInteger(Payload);
+                            if (EchoedVariant >= Constants::C_TrampolineVariantBase
+                                && EchoedVariant <= Constants::C_TrampolineVariantBase + 9979) {
+                                // Normal launch: disarm so the action can fire again next touch
+                                ActionSetVariant(Shooter, CSmMode::EActionSlot::Slot_D, 0);
+                            } else {
+                                // Garbage echo (0x27100000): the engine re-initialized the action
+                                // (respawn, checkpoint weapon set, ...) and corrupted the slot
+                                // variant; writes no longer reach the instance. Replace it with a
+                                // fresh one — the corrupt instance fires exactly once, so this
+                                // self-heals every corruption trigger, known or not.
+                                LoadTrampolineAction(Shooter);
+                            }
+                            // This armed launch has resolved (fired, or corrupt and replaced): retire it
+                            // from the in-flight count. Once nothing else is still waiting to fire, collapse
+                            // the global PvP window to a short post-fire tail (bullets explode immediately,
+                            // so the knockback is landing now) instead of holding it open for the safety cap.
+                            if (G_TrampolinePvPInFlight > 0) {
+                                G_TrampolinePvPInFlight -= 1;
+                            }
+                            if (G_TrampolinePvPInFlight <= 0 && G_TrampolinePvPWindowEnd > 0) {
+                                declare ShortEnd = Now + Constants::C_TrampolinePvPPostFireMs;
+                                if (ShortEnd < G_TrampolinePvPWindowEnd) {
+                                    G_TrampolinePvPWindowEnd = ShortEnd;
+                                }
+                            }
+                        }
+                        default: { DoNothing(); }
+                    }
+                }
+            }
         }
 
         case CSmModeEvent::EType::OnPlayerTouchesObject: {
@@ -533,7 +595,93 @@ foreach (Event in PendingEvents) {
 								Events::Invalid(Event);
 								continue;
 						}
-					
+
+						// Trampoline item: arm the trampoline action to launch the toucher
+						if (Event.Object != Null && Event.Player != Null) {
+							declare Text ItemName for Event.Object = "";
+							if (ItemName == Constants::C_ItemTrampoline) {
+								// Arming guard: the OnPlayerTouchesObject event fires across the whole TriggerShape,
+									// but arming must reach every point in it (a 6x6 pad corner is ~4.24m from the anchor).
+									// Kept below a respawn distance so it still drops stale touches queued across a respawn.
+								if (ML::Distance(Event.Object.AnchorLandmark.Position, Event.Player.Position) <= Constants::C_TrampolineTouchMaxDist) {
+									// Launch gates, set per anchor by the mapper (copied onto the object, clamped, in Items::Place)
+									declare Boolean TrampolineWaitGround for Event.Object = Constants::C_TrampolineDefaultWaitGround;
+									declare Integer TrampolineDelay for Event.Object = Constants::C_TrampolineDefaultDelay;
+
+									// Delay timer: touch events repeat while the player overlaps the pad, so a gap
+									// in events means they left the pad and the timer restarts on the next touch.
+									// On wait-ground pads the delay counts from landing instead: airborne touches
+									// park the timer (-1) and it starts on the first grounded touch.
+									declare Integer[Ident] TrampolineTouchStart for Event.Player = [];
+									declare Integer[Ident] TrampolineTouchLast for Event.Player = [];
+									declare TimerRunning = !TrampolineWaitGround || Event.Player.IsTouchingGround;
+									if (!TimerRunning) {
+										TrampolineTouchStart[Event.Object.Id] = -1;
+									} else if (!TrampolineTouchStart.existskey(Event.Object.Id) || TrampolineTouchStart[Event.Object.Id] < 0 || Now > TrampolineTouchLast[Event.Object.Id] + Constants::C_TrampolineTouchResetGap) {
+										TrampolineTouchStart[Event.Object.Id] = Now;
+									}
+									TrampolineTouchLast[Event.Object.Id] = Now;
+
+									// Gate closed while airborne on a wait-ground pad, and until the delay has
+									// passed since the timer started (pad contact / landing respectively)
+									declare LaunchGatesOpen = TimerRunning;
+									if (TimerRunning && Now < TrampolineTouchStart[Event.Object.Id] + TrampolineDelay) {
+										LaunchGatesOpen = False;
+									}
+
+									// per-object cooldown so standing on the pad doesn't refire every tick
+									declare Integer[Ident] TrampolineCooldowns for Event.Player = [];
+									if (LaunchGatesOpen && (!TrampolineCooldowns.existskey(Event.Object.Id) || Now > TrampolineCooldowns[Event.Object.Id])) {
+										TrampolineCooldowns[Event.Object.Id] = Now + 500;
+
+										// Launch parameters from the anchor metadata (copied onto the
+										// object, clamped, in Items::Place)
+										declare Integer TrampolineUp for Event.Object = Constants::C_TrampolineDefaultUp;
+										declare Integer TrampolineDown for Event.Object = Constants::C_TrampolineDefaultDown;
+										declare Integer TrampolineCompass for Event.Object = Constants::C_TrampolineDefaultCompass;
+										declare Integer TrampolineHoriz for Event.Object = Constants::C_TrampolineDefaultHoriz;
+
+										// Policy: optionally suppress the down blast when an up blast fires too
+										declare LaunchDown = TrampolineDown;
+										if (!Constants::C_TrampolineAllowBothVertical && TrampolineUp > 0) {
+											LaunchDown = 0;
+										}
+
+										if (TrampolineUp > 0 || LaunchDown > 0 || TrampolineHoriz > 0) {
+											// Open a short PvP window so the blast can push the player.
+											// G_LastUsePvPWeapons is set too, so the "used PvP weapons" run-stamp
+											// stays suppressed (a mode-sanctioned launch is not player PvP).
+											if (G_TrampolinePvPWindowEnd <= 0) {
+												G_TrampolinePvPRestore = UsePvPWeapons;
+											}
+											// Open at the safety cap; the fire echo collapses it to a short tail once the blast lands.
+											G_TrampolinePvPWindowEnd = Now + Constants::C_TrampolinePvPMaxMs;
+											G_TrampolinePvPInFlight += 1;
+											UsePvPWeapons = True;
+											G_LastUsePvPWeapons = True;
+
+											// Compass calibration: editor space (N..NW clockwise) -> action space
+											declare Steps = TrampolineCompass;
+											if (Constants::C_TrampolineCompassMirror) {
+												Steps = (8 - TrampolineCompass) % 8;
+											}
+											declare ActionCompass = (Steps + Constants::C_TrampolineCompassOffset) % 8;
+
+											// Encoding v2 (must match the action): base + up*1000 + down*100 + compass*10 + horiz
+											declare TrampolineVariant = Constants::C_TrampolineVariantBase
+												+ TrampolineUp * 1000 + LaunchDown * 100 + ActionCompass * 10 + TrampolineHoriz;
+											ActionSetVariant(Event.Player, CSmMode::EActionSlot::Slot_D, TrampolineVariant);
+										}
+									}
+								}
+								// Discard (not Valid/PassOn): the trampoline is a stand-on pad, not a pickup.
+								// PassOn makes the engine run its default touch effect (flash, sound, hide the
+								// object) every tick of overlap; Discard suppresses it while touches keep flowing.
+								Events::Invalid(Event);
+								continue;
+							}
+						}
+
            if (Event.Object != Null && Event.Player != Null && Items::PickupItems(Event)) {
 								
                 Events::Valid(Event);
@@ -641,6 +789,7 @@ foreach (Player in AllPlayers) {
         case CSmPlayer::ESpawnStatus::NotSpawned: {
             if (!Player::isInitialized(Player)) {
                 Obstacle::NewPlayer(Player);
+                LoadTrampolineAction(Player);
             } else if (!Player::hasTabsInitialized(Player)) {
                 declare CUIConfig UI <=> UIManager.GetUI(Player);
                 Tabs::UseTabs(UI, "ScoresTable");
@@ -680,6 +829,17 @@ foreach (Player in Players) {
         }
 
         case CSmPlayer::ESpawnStatus::Spawned: {
+
+            // Respawning corrupts the loaded action: the slot still reports one
+            // (Action_GetState != Null) but its Variant reads garbage (the last
+            // value shifted left 16 bits) and ActionSetVariant no longer reaches
+            // it. Reload a fresh instance on every spawn — StartTime changes per
+            // spawn, so this catches all spawn paths (RS, portals, waypoint jumps).
+            declare Integer TrampolineSpawnStart for Player = -1;
+            if (Player.StartTime != TrampolineSpawnStart) {
+                TrampolineSpawnStart = Player.StartTime;
+                LoadTrampolineAction(Player);
+            }
 
             if (UsePvPWeapons != G_LastUsePvPWeapons) {
                 if (UsePvPWeapons)
@@ -801,6 +961,17 @@ DestroyUI();
 // ---------------------------------- //
 // ---------------------------------- //
 Void DoNothing(){}
+
+// Load without ActionBind — the action must tick unbound and fire only from the variant the mode
+// sets (Slot_D is free: ObstacleLib loads no actions by default). Reloaded on every spawn edge and
+// on garbage echoes to replace the engine-corrupted instance.
+Void LoadTrampolineAction(CSmPlayer _Player) {
+    if (G_TrampolineActionId == NullId) return;
+    ActionLoad(_Player, CSmMode::EActionSlot::Slot_D, G_TrampolineActionId);
+    // Clear the slot variant so the fresh instance can't fire on a stale or
+    // garbage value (armed-at-death leftovers, post-respawn corruption)
+    ActionSetVariant(_Player, CSmMode::EActionSlot::Slot_D, 0);
+}
 
 Void CreateUI(Boolean _Replace) {
     CustomUI::Load();

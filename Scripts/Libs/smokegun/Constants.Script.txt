@@ -10,6 +10,7 @@
 // Items
 #Const C_ItemOffzone "Obstacle\\OffzoneShield.Item.gbx"
 #Const C_ItemAmmo "Obstacle\\Ammo.Item.gbx"
+#Const C_ItemTrampoline "Obstacle\\Trampoline.Item.gbx"
 #Const C_InvisibleSkin "Skins\\Models\\ArenaPlayer\\Invisible.zip"
 #Const C_ObstacleModel "Items\\Speed.Item.Gbx"
 
@@ -69,3 +70,24 @@
 
 #Const C_Score_Normal 0
 #Const C_Score_Survival 1
+
+// Trampoline (encoding v2: variant = base + up*1000 + down*100 + compass*10 + horiz;
+// must match C_VariantBase in Actions/Trampoline.Script.txt)
+#Const C_TrampolineVariantBase 10000
+#Const C_TrampolineDefaultUp 5
+#Const C_TrampolineDefaultDown 0
+#Const C_TrampolineDefaultCompass 0
+#Const C_TrampolineDefaultHoriz 0
+#Const C_TrampolineDefaultWaitGround False	// True: hold the launch until the player also touches the ground
+#Const C_TrampolineDefaultDelay 0			// ms of continuous pad contact required before the launch
+#Const C_TrampolineDelayMax 10000			// clamp ceiling for Meta_TrampolineDelay (ms)
+#Const C_TrampolineTouchResetGap 400		// ms without touch events after which the delay timer resets
+#Const C_TrampolineTouchMaxDist 6.			// arming guard: must span the item's TriggerShape reach (a 6x6 pad corner is ~4.24m) yet stay < a respawn distance
+#Const C_TrampolineAllowBothVertical True	// False: up > 0 suppresses the down blast
+#Const C_TrampolineCompassOffset 0			// calibration: action compass index that the editor's "N" maps to
+#Const C_TrampolineCompassMirror True		// calibration: flip the rotation sense (E/W swapped in-game)
+// PvP window: UsePvPWeapons is global (can't be gated per-player), so it must be open only as
+// briefly as possible around a launch. It opens when a launch arms and, once the action's fire
+// echo confirms the blast has landed (bullets explode immediately), collapses to a short tail.
+#Const C_TrampolinePvPMaxMs 300				// safety cap: window can't stay open longer than this after arming (used if no fire echo arrives)
+#Const C_TrampolinePvPPostFireMs 0			// extra ms to hold PvP open past the fire echo. 0 is safe for immediate-explosion bullets (blow already landed by echo time; a 1-tick cushion remains from the strict close) — only raise it if a bullet gets a delayed detonation
