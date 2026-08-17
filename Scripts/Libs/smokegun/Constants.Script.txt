@@ -87,6 +87,11 @@
 #Const C_LaunchFrameOrientation 1
 #Const C_LaunchFrameMovement 2
 #Const C_LaunchFrameMax 2						// clamp ceiling for either Frame metadata
+// The same three as the picker words them, indexed by the constants above — index 0 is
+// C_LaunchFrameWorld and so on. The editor builds both the picker and the click cases that read it
+// out of this list, and a Select* option word *is* its control id, so the words and the frame
+// values cannot be named apart.
+#Const C_LaunchFrameNames ["World", "Orientation", "Movement"]
 #Const C_TrampolineDefaultFrame 0				// C_LaunchFrameWorld
 #Const C_LaunchDefaultFrame 1					// C_LaunchFrameOrientation
 #Const C_TrampolineDefaultUp 5

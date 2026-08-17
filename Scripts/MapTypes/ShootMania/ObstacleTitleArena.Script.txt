@@ -265,6 +265,25 @@ Text Checkbox(Text _Position, Text _Id)
     """;
 }
 
+// The page-script half of Checkbox: putting the mark on screen in step with the flag behind it.
+// Every dialog writes the same block per box, so it is generated here the way DirectionBlockUpdate
+// is — a page script cannot call the plugin's functions, only take a copy of one.
+Text CheckboxUpdate()
+{
+    return """
+    Void SetCheckbox(Text _Id, Boolean _On) {
+        declare Label_Checkbox <=> (Page.GetFirstChild(_Id) as CMlLabel);
+        declare Mark = "";
+        if (_On) {
+            Mark = "✖";
+        }
+        if (Label_Checkbox.Value != Mark) {
+            Label_Checkbox.SetText(Mark);
+        }
+    }
+    """;
+}
+
 Text Property(Text _Position, Text _Title, Text _Content)
 {
     return """
@@ -320,10 +339,16 @@ Text DirectionBlock(Text _Position)
 {
     declare Compass = Select8("0 -21", "N", "NE", "E", "SE", "S", "SW", "W", "NW", "Compass_Selector");
     declare Arrows = Select8Arrows("0 -21", C_LaunchDirIdPrefix, "Launch_Dir_Selector");
+    // The picker's slots are the frames in their own order, so a slot's index is the value it
+    // stands for — which is what lets DirectionBlockCases below walk the same list.
+    declare Names = Constants::C_LaunchFrameNames;
+    declare FramePicker = Select3("0 -11", Names[Constants::C_LaunchFrameWorld],
+        Names[Constants::C_LaunchFrameOrientation], Names[Constants::C_LaunchFrameMovement],
+        "Frame_Selector");
     return BigProperty(_Position, "Direction", """
         <label pos="0 -6" size="40 5" text="Relative to:" textsize="2"
             class="text" halign="center" valign="center2"/>
-        {{{Select3("0 -11", "World", "Orientation", "Movement", "Frame_Selector")}}}
+        {{{FramePicker}}}
         <frame id="Frame_DirCompass">
             {{{Compass}}}
         </frame>
@@ -364,6 +389,19 @@ Text DirectionBlockUpdate(Text _DirVar, Text _FrameVar)
 Text DirectionBlockCases(Text _DirVar, Text _FrameVar)
 {
     declare World = TL::ToText(Constants::C_LaunchFrameWorld);
+    // One case per frame, out of the same list the picker's slots came from: the option word is
+    // the control id, and its index is the value that word means.
+    declare Frames = "";
+    foreach (Index => Name in Constants::C_LaunchFrameNames) {
+        declare Value = ""^Index;
+        Frames ^= """
+                            case "{{{Name}}}": {
+                                {{{_FrameVar}}} = {{{Value}}};
+                                NeedUpdate = True;
+                            }
+        """;
+    }
+
     declare CompassNames = ["N", "NE", "E", "SE", "S", "SW", "W", "NW"];
     declare Directions = "";
     for (Index, 0, 7) {
@@ -388,18 +426,7 @@ Text DirectionBlockCases(Text _DirVar, Text _FrameVar)
 
     return """
                             // Relative-to picker (see DirectionBlock)
-                            case "World": {
-                                {{{_FrameVar}}} = {{{World}}};
-                                NeedUpdate = True;
-                            }
-                            case "Orientation": {
-                                {{{_FrameVar}}} = {{{TL::ToText(Constants::C_LaunchFrameOrientation)}}};
-                                NeedUpdate = True;
-                            }
-                            case "Movement": {
-                                {{{_FrameVar}}} = {{{TL::ToText(Constants::C_LaunchFrameMovement)}}};
-                                NeedUpdate = True;
-                            }
+{{{Frames}}}
                             // Direction, clockwise from "straight ahead": compass letters in the
                             // world frame (Select8), arrows in the other two (Select8Arrows).
 {{{Directions}}}
@@ -2210,48 +2237,9 @@ Void EditLaunchAbility(CAnchorData _Anchor, Integer _Key)
     {{{GetML()}}}
     <script><!--
     #Include "TextLib" as TL
+    #Include "MathLib" as ML
 
-    Integer Clamp0_9(Integer _Value) {
-        if (_Value < 0) {
-            return 0;
-        }
-        if (_Value > 9) {
-            return 9;
-        }
-        return _Value;
-    }
-
-    Integer ClampCooldown(Integer _Value) {
-        if (_Value < 0) {
-            return 0;
-        }
-        if (_Value > {{{TL::ToText(Constants::C_LaunchCooldownMax)}}}) {
-            return {{{TL::ToText(Constants::C_LaunchCooldownMax)}}};
-        }
-        return _Value;
-    }
-
-    // The page script can't reach the plugin's functions, so the shared ceilings are inlined
-    // the way ClampCooldown above already inlines its own.
-    Integer ClampAmount(Integer _Value) {
-        if (_Value < 0) {
-            return 0;
-        }
-        if (_Value > {{{TL::ToText(Constants::C_LaunchAmountMax)}}}) {
-            return {{{TL::ToText(Constants::C_LaunchAmountMax)}}};
-        }
-        return _Value;
-    }
-
-    Integer ClampGain(Integer _Value) {
-        if (_Value < 0) {
-            return 0;
-        }
-        if (_Value > {{{TL::ToText(Constants::C_LaunchGainMax)}}}) {
-            return {{{TL::ToText(Constants::C_LaunchGainMax)}}};
-        }
-        return _Value;
-    }
+    {{{CheckboxUpdate()}}}
 
     Void UpdateView() {
         declare Boolean LaunchOn for Page;
@@ -2288,29 +2276,9 @@ Void EditLaunchAbility(CAnchorData _Anchor, Integer _Key)
             Quad_LaunchOn_Selector.RelativePosition_V3.X = 0.;
         }
 
-        declare Label_LaunchGround <=> (Page.GetFirstChild("Checkbox_LaunchGround") as CMlLabel);
-        if (LaunchGround && Label_LaunchGround.Value != "✖") {
-            Label_LaunchGround.SetText("✖");
-        }
-        if (!LaunchGround && Label_LaunchGround.Value != "") {
-            Label_LaunchGround.SetText("");
-        }
-
-        declare Label_LaunchRefill <=> (Page.GetFirstChild("Checkbox_Fill_Launch") as CMlLabel);
-        if (LaunchRefill && Label_LaunchRefill.Value != "✖") {
-            Label_LaunchRefill.SetText("✖");
-        }
-        if (!LaunchRefill && Label_LaunchRefill.Value != "") {
-            Label_LaunchRefill.SetText("");
-        }
-
-        declare Label_LaunchEmpty <=> (Page.GetFirstChild("Checkbox_Empty_Launch") as CMlLabel);
-        if (LaunchEmpty && Label_LaunchEmpty.Value != "✖") {
-            Label_LaunchEmpty.SetText("✖");
-        }
-        if (!LaunchEmpty && Label_LaunchEmpty.Value != "") {
-            Label_LaunchEmpty.SetText("");
-        }
+        SetCheckbox("Checkbox_LaunchGround", LaunchGround);
+        SetCheckbox("Checkbox_Fill_Launch", LaunchRefill);
+        SetCheckbox("Checkbox_Empty_Launch", LaunchEmpty);
 
         {{{DirectionBlockUpdate("LaunchDir", "LaunchFrame")}}}
 
@@ -2370,17 +2338,17 @@ Void EditLaunchAbility(CAnchorData _Anchor, Integer _Key)
                                 LaunchRefill = False;
                             }
                             case "UpPlus":
-                                LaunchUp = Clamp0_9(LaunchUp + 1);
+                                LaunchUp = ML::Clamp(LaunchUp + 1, 0, 9);
                             case "UpMinus":
-                                LaunchUp = Clamp0_9(LaunchUp - 1);
+                                LaunchUp = ML::Clamp(LaunchUp - 1, 0, 9);
                             case "DownPlus":
-                                LaunchDown = Clamp0_9(LaunchDown + 1);
+                                LaunchDown = ML::Clamp(LaunchDown + 1, 0, 9);
                             case "DownMinus":
-                                LaunchDown = Clamp0_9(LaunchDown - 1);
+                                LaunchDown = ML::Clamp(LaunchDown - 1, 0, 9);
                             case "SidePlus":
-                                LaunchSide = Clamp0_9(LaunchSide + 1);
+                                LaunchSide = ML::Clamp(LaunchSide + 1, 0, 9);
                             case "SideMinus":
-                                LaunchSide = Clamp0_9(LaunchSide - 1);
+                                LaunchSide = ML::Clamp(LaunchSide - 1, 0, 9);
 {{{DirectionBlockCases("LaunchDir", "LaunchFrame")}}}
                         }
 
@@ -2392,17 +2360,17 @@ Void EditLaunchAbility(CAnchorData _Anchor, Integer _Key)
                         declare Entry <=> (Event.Control as CMlEntry);
                         switch(Entry.ControlId) {
                             case "Entry_LaunchUp":
-                                LaunchUp = Clamp0_9(TL::ToInteger(Entry.Value));
+                                LaunchUp = ML::Clamp(TL::ToInteger(Entry.Value), 0, 9);
                             case "Entry_LaunchDown":
-                                LaunchDown = Clamp0_9(TL::ToInteger(Entry.Value));
+                                LaunchDown = ML::Clamp(TL::ToInteger(Entry.Value), 0, 9);
                             case "Entry_LaunchSide":
-                                LaunchSide = Clamp0_9(TL::ToInteger(Entry.Value));
+                                LaunchSide = ML::Clamp(TL::ToInteger(Entry.Value), 0, 9);
                             case "Entry_LaunchCooldown":
-                                LaunchCooldown = ClampCooldown(TL::ToInteger(Entry.Value));
+                                LaunchCooldown = ML::Clamp(TL::ToInteger(Entry.Value), 0, {{{TL::ToText(Constants::C_LaunchCooldownMax)}}});
                             case "Entry_LaunchAmount":
-                                LaunchAmount = ClampAmount(TL::ToInteger(Entry.Value));
+                                LaunchAmount = ML::Clamp(TL::ToInteger(Entry.Value), 0, {{{TL::ToText(Constants::C_LaunchAmountMax)}}});
                             case "Entry_LaunchGain":
-                                LaunchGain = ClampGain(TL::ToInteger(Entry.Value));
+                                LaunchGain = ML::Clamp(TL::ToInteger(Entry.Value), 0, {{{TL::ToText(Constants::C_LaunchGainMax)}}});
                         }
                         NeedUpdate = True;
                     }
@@ -2637,36 +2605,9 @@ Void EditTrampolineItem(CAnchorData _Item)
     {{{GetML()}}}
     <script><!--
     #Include "TextLib" as TL
+    #Include "MathLib" as ML
 
-    Integer Clamp0_9(Integer _Value) {
-        if (_Value < 0) {
-            return 0;
-        }
-        if (_Value > 9) {
-            return 9;
-        }
-        return _Value;
-    }
-
-    Integer ClampDelay(Integer _Value) {
-        if (_Value < 0) {
-            return 0;
-        }
-        if (_Value > {{{TL::ToText(Constants::C_TrampolineDelayMax)}}}) {
-            return {{{TL::ToText(Constants::C_TrampolineDelayMax)}}};
-        }
-        return _Value;
-    }
-
-    Integer ClampCooldown(Integer _Value) {
-        if (_Value < 0) {
-            return 0;
-        }
-        if (_Value > {{{TL::ToText(Constants::C_TrampolineCooldownMax)}}}) {
-            return {{{TL::ToText(Constants::C_TrampolineCooldownMax)}}};
-        }
-        return _Value;
-    }
+    {{{CheckboxUpdate()}}}
 
     Void UpdateView() {
         declare Integer TrampUp for Page;
@@ -2689,13 +2630,7 @@ Void EditTrampolineItem(CAnchorData _Item)
         declare Entry_TrampCooldown <=> (Page.GetFirstChild("Entry_TrampCooldown") as CMlEntry);
         Entry_TrampCooldown.SetText(TL::ToText(TrampCooldown), False);
 
-        declare Label_WaitGround <=> (Page.GetFirstChild("Checkbox_TrampWaitGround") as CMlLabel);
-        if (TrampWaitGround && Label_WaitGround.Value != "✖") {
-            Label_WaitGround.SetText("✖");
-        }
-        if (!TrampWaitGround && Label_WaitGround.Value != "") {
-            Label_WaitGround.SetText("");
-        }
+        SetCheckbox("Checkbox_TrampWaitGround", TrampWaitGround);
 
         {{{DirectionBlockUpdate("TrampCompass", "TrampFrame")}}}
 
@@ -2734,27 +2669,27 @@ Void EditTrampolineItem(CAnchorData _Item)
                             case "Window_Background":
                                 SendCustomEvent("Event_Property_Window_Clicked", Text[]);
                             case "UpPlus": {
-                                TrampUp = Clamp0_9(TrampUp + 1);
+                                TrampUp = ML::Clamp(TrampUp + 1, 0, 9);
                                 NeedUpdate = True;
                             }
                             case "UpMinus": {
-                                TrampUp = Clamp0_9(TrampUp - 1);
+                                TrampUp = ML::Clamp(TrampUp - 1, 0, 9);
                                 NeedUpdate = True;
                             }
                             case "DownPlus": {
-                                TrampDown = Clamp0_9(TrampDown + 1);
+                                TrampDown = ML::Clamp(TrampDown + 1, 0, 9);
                                 NeedUpdate = True;
                             }
                             case "DownMinus": {
-                                TrampDown = Clamp0_9(TrampDown - 1);
+                                TrampDown = ML::Clamp(TrampDown - 1, 0, 9);
                                 NeedUpdate = True;
                             }
                             case "HorizPlus": {
-                                TrampHoriz = Clamp0_9(TrampHoriz + 1);
+                                TrampHoriz = ML::Clamp(TrampHoriz + 1, 0, 9);
                                 NeedUpdate = True;
                             }
                             case "HorizMinus": {
-                                TrampHoriz = Clamp0_9(TrampHoriz - 1);
+                                TrampHoriz = ML::Clamp(TrampHoriz - 1, 0, 9);
                                 NeedUpdate = True;
                             }
 {{{DirectionBlockCases("TrampCompass", "TrampFrame")}}}
@@ -2785,19 +2720,19 @@ Void EditTrampolineItem(CAnchorData _Item)
                         declare Entry <=> (Event.Control as CMlEntry);
                         switch(Entry.ControlId) {
                             case "Entry_TrampUp": {
-                                TrampUp = Clamp0_9(TL::ToInteger(Entry.Value));
+                                TrampUp = ML::Clamp(TL::ToInteger(Entry.Value), 0, 9);
                             }
                             case "Entry_TrampDown": {
-                                TrampDown = Clamp0_9(TL::ToInteger(Entry.Value));
+                                TrampDown = ML::Clamp(TL::ToInteger(Entry.Value), 0, 9);
                             }
                             case "Entry_TrampHoriz": {
-                                TrampHoriz = Clamp0_9(TL::ToInteger(Entry.Value));
+                                TrampHoriz = ML::Clamp(TL::ToInteger(Entry.Value), 0, 9);
                             }
                             case "Entry_TrampCooldown": {
-                                TrampCooldown = ClampCooldown(TL::ToInteger(Entry.Value));
+                                TrampCooldown = ML::Clamp(TL::ToInteger(Entry.Value), 0, {{{TL::ToText(Constants::C_TrampolineCooldownMax)}}});
                             }
                             case "Entry_TrampDelay": {
-                                TrampDelay = ClampDelay(TL::ToInteger(Entry.Value));
+                                TrampDelay = ML::Clamp(TL::ToInteger(Entry.Value), 0, {{{TL::ToText(Constants::C_TrampolineDelayMax)}}});
                                 // The mapper owns the delay from here on: unticking must not
                                 // revert it. Retyping the prefilled value itself is not an edit.
                                 if (TrampDelay != {{{TL::ToText(Constants::C_TrampolineWaitGroundDelayPrefill)}}}) {
