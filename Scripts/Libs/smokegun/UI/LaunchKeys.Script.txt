@@ -33,7 +33,7 @@
  * drawn the same way in all three, always the direction the editor's picker drew: up is straight
  * ahead in the two player-relative frames and north in the world one, and every step from there
  * turns it another 45 deg clockwise. What tells the three apart is the symbol hung off the arrow —
- * an azure compass for the world, an amber camera for the aim, a violet runner for the travel
+ * an azure compass for the world, a coral camera for the aim, a turquoise runner for the travel
  * direction — and every frame that is on screen spells itself out in a legend line under the block,
  * once per frame however many keys use it, in the symbol's own colour. A single white "Rel. to:"
  * stands against the first of those lines and does for all of them: a symbol is a reminder, not an
@@ -65,7 +65,8 @@
 //
 // The arrow is a titlepack image rather than an arrow character: the fonts have no diagonal arrow.
 // The image is white, and the tint comes from modulatecolor rather than colorize — colorize
-// modulates a style/substyle texture and is ignored on an image quad.
+// modulates a style/substyle texture and is ignored on an image quad. All three arrows carry the
+// same near-white: what tells an item apart is which way its arrow points, not what colour it is.
 // It points up, which is both the upward launch and the horizontal one's "straight ahead", so the
 // two commonest items draw unrotated. The turn that aims the rest is applied to a wrapper frame
 // rather than to the quad — a rotated control spins around its position anchor, while a frame
@@ -74,14 +75,12 @@
 // Emitted top down, because an earlier quad draws over a later one: the digit, the arrow, then
 // whatever the caller hangs off it. _Extra is the horizontal item's frame indicator and nothing
 // else draws one, so the item is otherwise the same three ways over.
-// 0.082, 0.780, 1.>
-// 1., 0.588, 0.325>
-Text InfoItem(Text _Name, Text _Rot, Text _Arrow, Text _ArrowColour, Text _Extra) {
+Text InfoItem(Text _Name, Text _Rot, Text _Arrow, Text _Extra) {
     return """
         <frame id="Frame_Item{{{_Name}}}" pos="0 0" hidden="1">
             <label id="Label_Item{{{_Name}}}" pos="1 0" size="3 3" text="0" textsize="1.1" textfont="OswaldMono" textcolor="F4F4F4" halign="left" valign="center2" opacity="1.0"/>
             <frame id="Frame_Rot{{{_Name}}}" pos="4.7 0" rot="{{{_Rot}}}">
-            <quad pos="0 0" size="4.3 4.3" halign="center" valign="center" keepratio="Fit" image="file://Media/Images/Obstacle/Interface/{{{_Arrow}}}" modulatecolor="{{{_ArrowColour}}}"/>
+            <quad pos="0 0" size="4.3 4.3" halign="center" valign="center" keepratio="Fit" image="file://Media/Images/Obstacle/Interface/{{{_Arrow}}}" modulatecolor="FBFBFB"/>
             </frame>
             {{{_Extra}}}
         </frame>
@@ -95,17 +94,19 @@ Text GetLayer() {
     declare FrameWorld = Constants::C_LaunchFrameWorld;
     declare FrameOrientation = Constants::C_LaunchFrameOrientation;
     declare FrameMovement = Constants::C_LaunchFrameMovement;
+    declare FrameCount = Constants::C_LaunchFrameMax + 1;
 
-    // One colour per frame the direction can be measured in, in the two spellings the layer needs:
-    // hex for the markup, and the Vec3 the page script repaints the shared symbol label with when
-    // it switches between them. The two spellings of a colour have to be kept in step by hand.
+    // One colour per frame the direction can be measured in, written once: the markup takes the hex
+    // straight, and the page script — which needs a Vec3 to repaint the shared symbol label with
+    // when it switches between them — derives it with CL::HexToRgb rather than carrying a second
+    // spelling that could drift from this one.
     //
-    // The three are a cool/warm/violet triad rather than three neighbours, so a glyph the size of a
+    // The three are a cool/warm/cyan triad rather than three neighbours, so a glyph the size of a
     // digit is still told apart at a glance, and all three are kept bright: they draw straight over
     // the scene, with no card behind them to hold them up against a white sky.
-    declare ColourWorldHex = "61B5FF";			// = C_ColourWorld (original: 4DB8FF)
-    declare ColourOrientationHex = "FF9366";	// = C_ColourOrientation (original: FFB347)
-    declare ColourMovementHex = "4BFFEC";		// the runner is a styled quad, so this one is hex only (original: B388FF)
+    declare ColourWorldHex = "61B5FF";
+    declare ColourOrientationHex = "FF9366";
+    declare ColourMovementHex = "4BFFEC";
 
     // Drag handle for the F8 UI editor, sized for the widest and tallest the block can get rather
     // than for what it happens to draw. The rows run up from C_BaseY (-79) and the legend down from
@@ -159,9 +160,9 @@ Text GetLayer() {
     // turned by the page script to the direction the launch takes, and reads as a compass rather
     // than a third vertical arrow because of the ring it is drawn in and its own colour — a launch
     // straight ahead points its arrow up, exactly where the upward arrow points.
-    declare InfoItems = InfoItem("Up", "0", "arrow-square.png", "FBFBFB", "")
-        ^ InfoItem("Down", "180", "arrow-square.png", "FBFBFB", "")
-        ^ InfoItem("Side", "0", "arrow-circle.png", "FBFBFB", SideExtra);
+    declare InfoItems = InfoItem("Up", "0", "arrow-square.png", "")
+        ^ InfoItem("Down", "180", "arrow-square.png", "")
+        ^ InfoItem("Side", "0", "arrow-circle.png", SideExtra);
 
     declare Rows = "";
     for (Row, 0, KeyCount - 1) {
@@ -243,7 +244,7 @@ Text GetLayer() {
     #Const C_InfoGap 0.3
     #Const C_InfoItemNames ["Up", "Down", "Side"]
     #Const C_InfoItemCount 3
-    #Const C_InfoItemSide 2	// the one item that is turned, so its slot has to be named
+    #Const C_InfoItemSide 2	// where the horizontal strength sits in the list above
     // The horizontal item is the wider one: whichever frame it is in, it carries a third control
     // (the frame symbol, centred on 8.9 and 4.4 across) after the two every item has. Its slot
     // keeps the same 1.15 of slack past its last control that C_InfoItemWidth leaves past the
@@ -256,15 +257,18 @@ Text GetLayer() {
     #Const C_FrameWorld {{{FrameWorld}}}
     #Const C_FrameOrientation {{{FrameOrientation}}}
     #Const C_FrameMovement {{{FrameMovement}}}
-    #Const C_FrameCount 3
+    #Const C_FrameCount {{{FrameCount}}}
     // The two frame symbols that are font glyphs rather than button styles: a compass for the
     // world frame, a camera for the aim. The runner the movement frame uses has no glyph, so it
     // is a styled quad next to this label instead. Both are drawn in the game's default font,
     // which is where these live — OswaldMono, which the digits are set in, has neither.
     #Const C_GlyphCompass ""
     #Const C_GlyphCamera "🎥"
-    #Const C_ColourWorld <0.380, 0.710, 1.>			// = 4DB8FF, the hex the legend label carries
-    #Const C_ColourOrientation <1., 0.576, 0.4>	// = FFB347, likewise
+    // The same hex the matching legend label is written in, one source for both: the symbol and
+    // the line explaining it come out the same colour by construction, not by two spellings of it
+    // agreeing. main() turns them into the Vec3 TextColor takes, once.
+    #Const C_ColourWorldHex "{{{ColourWorldHex}}}"
+    #Const C_ColourOrientationHex "{{{ColourOrientationHex}}}"
     // The legend lines under the rows: how far apart they sit, and how much air stands between
     // "Rel. to:" and the column of names it is written against. The legend is inset from the
     // strip's left edge by C_InfoSlack because it is the only thing here not laid out in a slot —
@@ -276,16 +280,7 @@ Text GetLayer() {
     #Const C_LegendGap 1.2
     #Const C_InfoSlack 1.5
 
-    Real Clamp01(Real _Value) {
-        if (_Value < 0.) {
-            return 0.;
-        }
-        if (_Value > 1.) {
-            return 1.;
-        }
-        return _Value;
-    }
-
+    // From Tools.Script.txt
     Boolean SameInts(Integer[] _Left, Integer[] _Right) {
         if (_Left.count != _Right.count) {
             return False;
@@ -312,12 +307,12 @@ Text GetLayer() {
         declare CMlQuad[] Quads_BarBg;
         declare CMlQuad[] Quads_BarFill;
         declare CMlQuad[] Quads_BarCore;
-        // The strengths line, indexed the same way at R * C_InfoItemCount + I. Only the
-        // horizontal item is ever turned, but caching all three rotation frames keeps one rule.
+        // The strengths line, indexed the same way at R * C_InfoItemCount + I.
         declare CMlFrame[] Frames_Item;
         declare CMlLabel[] Labels_Item;
-        declare CMlFrame[] Frames_Rot;
-        // The horizontal item's frame indicator: one entry per row, since only that item has one.
+        // The horizontal item's own controls: the wrapper frame that turns its arrow, and the
+        // frame indicator hung off it. One entry per row, since only that item has either.
+        declare CMlFrame[] Frames_RotSide;
         declare CMlLabel[] Labels_FrameSide;
         declare CMlQuad[] Quads_FrameSide;
         for (Row, 0, C_KeyCount - 1) {
@@ -334,14 +329,14 @@ Text GetLayer() {
             foreach (Name in C_InfoItemNames) {
                 declare CMlFrame Frame_Item <=> (Frame_Row.GetFirstChild("Frame_Item"^Name) as CMlFrame);
                 declare CMlLabel Label_Item <=> (Frame_Row.GetFirstChild("Label_Item"^Name) as CMlLabel);
-                declare CMlFrame Frame_Rot <=> (Frame_Row.GetFirstChild("Frame_Rot"^Name) as CMlFrame);
                 Frames_Item.add(Frame_Item);
                 Labels_Item.add(Label_Item);
-                Frames_Rot.add(Frame_Rot);
             }
 
+            declare CMlFrame Frame_RotSide <=> (Frame_Row.GetFirstChild("Frame_RotSide") as CMlFrame);
             declare CMlLabel Label_FrameSide <=> (Frame_Row.GetFirstChild("Label_FrameSide") as CMlLabel);
             declare CMlQuad Quad_FrameSide <=> (Frame_Row.GetFirstChild("Quad_FrameSide") as CMlQuad);
+            Frames_RotSide.add(Frame_RotSide);
             Labels_FrameSide.add(Label_FrameSide);
             Quads_FrameSide.add(Quad_FrameSide);
 
@@ -374,6 +369,11 @@ Text GetLayer() {
         declare InfoRightX = C_BaseX - C_StripWidth / 2. - C_InfoGap;
         declare LegendRightX = InfoRightX - C_InfoSlack;
 
+        // The two glyph frames' colours as TextColor wants them, off the same hex their legend
+        // lines are written in. Derived once: the hex never changes, so neither do these.
+        declare ColourWorld = CL::HexToRgb(C_ColourWorldHex);
+        declare ColourOrientation = CL::HexToRgb(C_ColourOrientationHex);
+
         // What the strip currently shows. The layout only has to be rebuilt when the mode
         // publishes something new; every other frame just redraws the bar that is filling.
         declare Integer[] Shown_Bars = [];
@@ -391,9 +391,10 @@ Text GetLayer() {
         // that has a player to read always repaints.
         declare Real Shown_Hue = -1.;
 
-        // One entry per visible row, all appended together by the layout pass: which key the row
-        // draws, which quad of it is filling (flat index, -1 = none) and how wide a full bar is.
-        declare Integer[] Row_Key = [];
+        // What the fill pass needs, one entry per key rather than per visible row: which quad of
+        // that key's row is filling (flat index into the quad caches, -1 = none, which is also
+        // what a key drawing no row keeps) and how wide a full bar of it is. Keyed by key so the
+        // pass can read the published windows without mapping a slot back to a key first.
         declare Integer[] Row_Charging = [];
         declare Real[] Row_BarWidth = [];
 
@@ -433,7 +434,6 @@ Text GetLayer() {
                     Shown_Side = [];
                     Shown_Dir = [];
                     Shown_Frame = [];
-                    Row_Key = [];
                     Row_Charging = [];
                     Row_BarWidth = [];
                     Shown_Anything = False;
@@ -490,9 +490,13 @@ Text GetLayer() {
                 Shown_Side = Net_LaunchSide;
                 Shown_Dir = Net_LaunchDir;
                 Shown_Frame = Net_LaunchFrame;
-                Row_Key = [];
+                // Seeded a slot per key, so a key whose row is hidden below simply keeps its -1
                 Row_Charging = [];
                 Row_BarWidth = [];
+                for (Key, 1, C_KeyCount) {
+                    Row_Charging.add(-1);
+                    Row_BarWidth.add(0.);
+                }
 
                 // Key 1 draws at the top, so the row that gets the topmost slot is only known
                 // once the visible rows have been counted. Counting them first keeps the block
@@ -667,7 +671,7 @@ Text GetLayer() {
                         SideDir = Net_LaunchDir[Index];
                     }
 
-                    declare Frame_RotSide <=> Frames_Rot[Index * C_InfoItemCount + C_InfoItemSide];
+                    declare Frame_RotSide <=> Frames_RotSide[Index];
                     if (Frame_RotSide != Null) {
                         Frame_RotSide.RelativeRotation = ML::ToReal(SideDir) * 45.;
                     }
@@ -678,10 +682,10 @@ Text GetLayer() {
                         Label_FrameSide.Visible = KeyFrame != C_FrameMovement;
                         if (KeyFrame == C_FrameWorld) {
                             Label_FrameSide.Value = C_GlyphCompass;
-                            Label_FrameSide.TextColor = C_ColourWorld;
+                            Label_FrameSide.TextColor = ColourWorld;
                         } else if (KeyFrame == C_FrameOrientation) {
                             Label_FrameSide.Value = C_GlyphCamera;
-                            Label_FrameSide.TextColor = C_ColourOrientation;
+                            Label_FrameSide.TextColor = ColourOrientation;
                         }
                     }
                     declare Quad_FrameSide <=> Quads_FrameSide[Index];
@@ -689,9 +693,8 @@ Text GetLayer() {
                         Quad_FrameSide.Visible = KeyFrame == C_FrameMovement;
                     }
 
-                    Row_Key.add(Index);
-                    Row_Charging.add(Charging);
-                    Row_BarWidth.add(BarWidth);
+                    Row_Charging[Index] = Charging;
+                    Row_BarWidth[Index] = BarWidth;
                 }
 
                 // The legend hangs off the bottom of the block, the frames in their own order and
@@ -756,11 +759,10 @@ Text GetLayer() {
             // Every frame, and only the bar that is filling. ArenaNow is the mode's own Now and
             // the window it published holds for the whole charge, so the fill interpolates
             // smoothly however rarely the mode republishes.
-            foreach (Slot => Flat in Row_Charging) {
+            foreach (KeyIndex => Flat in Row_Charging) {
                 if (Flat < 0) {
                     continue;
                 }
-                declare KeyIndex = Row_Key[Slot];
                 declare PartFrom = 0;
                 declare PartTo = 0;
                 if (Net_LaunchPartFrom.count > KeyIndex) {
@@ -774,9 +776,9 @@ Text GetLayer() {
                 // completes: the clamp leaves the bar sitting empty through it.
                 declare Ratio = 0.;
                 if (PartTo > PartFrom) {
-                    Ratio = Clamp01(ML::ToReal(ArenaNow - PartFrom) / ML::ToReal(PartTo - PartFrom));
+                    Ratio = ML::Clamp(ML::ToReal(ArenaNow - PartFrom) / ML::ToReal(PartTo - PartFrom), 0., 1.);
                 }
-                declare FillWidth = Row_BarWidth[Slot] * Ratio;
+                declare FillWidth = Row_BarWidth[KeyIndex] * Ratio;
                 declare Lit = FillWidth > 0.;
 
                 declare Quad_BarFill <=> Quads_BarFill[Flat];
