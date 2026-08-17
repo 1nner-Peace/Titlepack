@@ -107,6 +107,7 @@ declare Boolean G_ForceInvisibleSkin;
 declare Ident   G_WayPointSpawn;
 declare Ident   G_TrampolineActionId;
 declare Ident[] G_LaunchActionIds;	// one per launch key, index 0 = key 1 (see C_LaunchActionModels)
+declare Boolean G_MapHasLaunchKeys;	// does any landmark grant a launch key (see MapHasLaunchKeys)
 declare Integer G_TrampolinePvPWindowEnd;
 declare Boolean G_TrampolinePvPRestore;
 declare Integer G_TrampolinePvPInFlight;	// launches armed but not yet confirmed fired; the window only collapses when this hits 0
@@ -311,6 +312,8 @@ UsePvPWeapons = Obstacle::IsPvPWeaponsMap();
 UsePvPCollisions = Obstacle::IsPvPCollisionsMap();
 UseSameWallJump = Obstacle::IsSameWallJumpMap();
 SpawnInvulnerabilityDuration = Obstacle::InvulnerabilityDuration();
+// Settled before CreateUI() below, which is what the flag gates
+G_MapHasLaunchKeys = MapHasLaunchKeys();
 
 
 Settings::SetForceDisableRecords(Settings::GetForceDisableRecords() || Obstacle::IsRandomizerMap() || ServerModeName == "");
@@ -1160,6 +1163,24 @@ Void InitLaunchCharges(CSmPlayer _Player, Boolean[] _PreviousOn, Integer[] _Prev
     }
 }
 
+// Does any section on this map grant a launch key at all? Answered once at map start, because
+// both halves of the feature cost something on every map otherwise: the HUD layer instantiates
+// ~210 controls per client (160 bar quads alone) and caches them all before its first frame, and
+// LoadLaunchConfig re-reads 48 metadata values on every spawn and every checkpoint.
+Boolean MapHasLaunchKeys() {
+    foreach (Landmark in MapLandmarks) {
+        declare metadata Meta_Launch1_On for Landmark = Constants::C_LaunchDefaultOn;
+        declare metadata Meta_Launch2_On for Landmark = Constants::C_LaunchDefaultOn;
+        declare metadata Meta_Launch3_On for Landmark = Constants::C_LaunchDefaultOn;
+        declare metadata Meta_Launch4_On for Landmark = Constants::C_LaunchDefaultOn;
+
+        if (Meta_Launch1_On || Meta_Launch2_On || Meta_Launch3_On || Meta_Launch4_On) {
+            return True;
+        }
+    }
+    return False;
+}
+
 // Read the launch settings off the landmark governing the player's current section — the
 // last checkpoint they captured, or the spawn before the first one. No landmark (spectator,
 // pre-spawn, legacy map without the metadata) leaves every key ungranted.
@@ -1231,9 +1252,12 @@ Void LoadLaunchConfig(CSmPlayer _Player, Boolean _Respawned) {
     ResetLaunchConfig(_Player);
 
     declare Section = Player::GetSectionAnchor(_Player);
-    if (!MapLandmarks.existskey(Section)) {
-        // Nothing granted: publish the zeroes once so a strip left over from the previous
-        // section goes away, rather than leaving the last setup on screen.
+    if (!G_MapHasLaunchKeys || !MapLandmarks.existskey(Section)) {
+        // Nothing granted: no launch metadata anywhere on the map, or no landmark governing this
+        // player (spectator, pre-spawn, legacy map). Publish the zeroes once so a strip left over
+        // from the previous section goes away, rather than leaving the last setup on screen. The
+        // reset above still runs on the map-wide exit, so leaving a launch map for one without
+        // launch keys unbinds what the last one granted.
         LaunchKeys::PublishConfig(_Player);
         LaunchKeys::PublishCharges(_Player);
         return;
@@ -1587,7 +1611,11 @@ Void CreateUI(Boolean _Replace) {
     Layers::Create("UpdatePlayer", UpdatePlayer::GetLayer());
 
     Layers::Create("Items", Items::CreateLayerItems());
-    Layers::Create("LaunchKeys", LaunchKeys::GetLayer());
+    // Skipped whole on a map granting no launch key: the strip is ~210 controls per client that
+    // would never be drawn (see MapHasLaunchKeys).
+    if (G_MapHasLaunchKeys) {
+        Layers::Create("LaunchKeys", LaunchKeys::GetLayer());
+    }
 
     if (Settings::GetEnableRecords()) {
         Layers::Create("PlayerFinished", PlayerFinished::GetLayer());
@@ -1606,7 +1634,9 @@ Void CreateUI(Boolean _Replace) {
     Layers::Attach("CPTimes");
     //Layers::Attach("KeysSettings");
     Layers::Attach("Items");
-    Layers::Attach("LaunchKeys");
+    if (G_MapHasLaunchKeys) {
+        Layers::Attach("LaunchKeys");
+    }
     Layers::Attach("SpecKeys");
     Layers::Attach("AntiDevMode");
 
@@ -1649,6 +1679,8 @@ Void DestroyUI(Boolean _Hard) {
     Layers::Detach("CPTimes");
     //Layers::Detach("KeysSettings");
     Layers::Detach("Items");
+    // Ungated on purpose: Layers::Detach is an Exists() no-op when the map never created the
+    // layer, and detaching unconditionally survives a map change that flips the flag.
     Layers::Detach("LaunchKeys");
     Layers::Detach("Records");
 
