@@ -1166,16 +1166,26 @@ Void InitLaunchCharges(CSmPlayer _Player, Boolean[] _PreviousOn, Integer[] _Prev
 // Does any section on this map grant a launch key at all? Answered once at map start, because
 // both halves of the feature cost something on every map otherwise: the HUD layer instantiates
 // ~210 controls per client (160 bar quads alone) and caches them all before its first frame, and
-// LoadLaunchConfig re-reads 48 metadata values on every spawn and every checkpoint.
+// LoadLaunchConfig re-reads the anchor's launch config on every spawn and every checkpoint.
 Boolean MapHasLaunchKeys() {
     foreach (Landmark in MapLandmarks) {
-        declare metadata Meta_Launch1_On for Landmark = Constants::C_LaunchDefaultOn;
-        declare metadata Meta_Launch2_On for Landmark = Constants::C_LaunchDefaultOn;
-        declare metadata Meta_Launch3_On for Landmark = Constants::C_LaunchDefaultOn;
-        declare metadata Meta_Launch4_On for Landmark = Constants::C_LaunchDefaultOn;
+        declare metadata Integer[] Meta_LaunchConfig for Landmark = [];
+        if (Meta_LaunchConfig.count < 1) {
+            continue;
+        }
 
-        if (Meta_Launch1_On || Meta_Launch2_On || Meta_Launch3_On || Meta_Launch4_On) {
-            return True;
+        // Only the On field of each key block is worth reading here. The width has to come out
+        // of the array rather than be assumed — see the layout note in Constants.
+        declare Width = Meta_LaunchConfig[0];
+        if (Width <= Constants::C_LaunchFieldOn) {
+            continue;
+        }
+
+        for (Key, 1, Constants::C_LaunchKeyCount) {
+            declare Index = 1 + (Key - 1) * Width + Constants::C_LaunchFieldOn;
+            if (Meta_LaunchConfig.count > Index && Meta_LaunchConfig[Index] == 1) {
+                return True;
+            }
         }
     }
     return False;
@@ -1263,103 +1273,51 @@ Void LoadLaunchConfig(CSmPlayer _Player, Boolean _Respawned) {
         return;
     }
     declare Anchor <=> MapLandmarks[Section];
+    declare metadata Integer[] Meta_LaunchConfig for Anchor = [];
 
-    declare metadata Meta_Launch1_On for Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch1_Up for Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch1_Down for Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch1_Side for Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch1_Dir for Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch1_Frame for Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch1_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch1_Ground for Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch1_Amount for Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch1_Gain for Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch1_Refill for Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch1_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
+    // One array per anchor holds all four keys; the width of a key block is its first element,
+    // so a map saved before a field was added still reads the fields it does have (layout note in
+    // Constants). A key the array does not reach keeps what ResetLaunchConfig left — ungranted,
+    // which is also what a legacy map without the metadata gets.
+    declare Width = 0;
+    if (Meta_LaunchConfig.count > 0) {
+        Width = Meta_LaunchConfig[0];
+    }
 
-    declare metadata Meta_Launch2_On for Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch2_Up for Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch2_Down for Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch2_Side for Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch2_Dir for Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch2_Frame for Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch2_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch2_Ground for Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch2_Amount for Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch2_Gain for Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch2_Refill for Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch2_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        declare Slot = Key - 1;
+        declare Base = 1 + Slot * Width;
+        if (Width < 1 || Meta_LaunchConfig.count < Base + Width) {
+            continue;
+        }
 
-    declare metadata Meta_Launch3_On for Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch3_Up for Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch3_Down for Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch3_Side for Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch3_Dir for Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch3_Frame for Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch3_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch3_Ground for Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch3_Amount for Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch3_Gain for Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch3_Refill for Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch3_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
+        // The stored block, widened to the current field layout. A block saved before a field
+        // was added is read as far as it goes and the rest come out 0 rather than the field's
+        // default — the editor rewrites the anchor in full the next time it is saved. Narrowing
+        // to zero beats rejecting the block outright, which would silently ungrant every key on
+        // every existing map the first time a field is appended.
+        declare Integer[] Fields = [];
+        for (Field, 0, Constants::C_LaunchFieldCount - 1) {
+            if (Field < Width) {
+                Fields.add(Meta_LaunchConfig[Base + Field]);
+            } else {
+                Fields.add(0);
+            }
+        }
 
-    declare metadata Meta_Launch4_On for Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch4_Up for Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch4_Down for Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch4_Side for Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch4_Dir for Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch4_Frame for Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch4_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch4_Ground for Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch4_Amount for Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch4_Gain for Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch4_Refill for Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch4_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
-
-    LaunchOn = [Meta_Launch1_On, Meta_Launch2_On, Meta_Launch3_On, Meta_Launch4_On];
-    LaunchUp = [
-        ML::Clamp(Meta_Launch1_Up, 0, 9), ML::Clamp(Meta_Launch2_Up, 0, 9),
-        ML::Clamp(Meta_Launch3_Up, 0, 9), ML::Clamp(Meta_Launch4_Up, 0, 9)
-    ];
-    LaunchDown = [
-        ML::Clamp(Meta_Launch1_Down, 0, 9), ML::Clamp(Meta_Launch2_Down, 0, 9),
-        ML::Clamp(Meta_Launch3_Down, 0, 9), ML::Clamp(Meta_Launch4_Down, 0, 9)
-    ];
-    LaunchSide = [
-        ML::Clamp(Meta_Launch1_Side, 0, 9), ML::Clamp(Meta_Launch2_Side, 0, 9),
-        ML::Clamp(Meta_Launch3_Side, 0, 9), ML::Clamp(Meta_Launch4_Side, 0, 9)
-    ];
-    LaunchDir = [
-        ML::Clamp(Meta_Launch1_Dir, 0, 7), ML::Clamp(Meta_Launch2_Dir, 0, 7),
-        ML::Clamp(Meta_Launch3_Dir, 0, 7), ML::Clamp(Meta_Launch4_Dir, 0, 7)
-    ];
-    LaunchFrame = [
-        ML::Clamp(Meta_Launch1_Frame, 0, Constants::C_LaunchFrameMax),
-        ML::Clamp(Meta_Launch2_Frame, 0, Constants::C_LaunchFrameMax),
-        ML::Clamp(Meta_Launch3_Frame, 0, Constants::C_LaunchFrameMax),
-        ML::Clamp(Meta_Launch4_Frame, 0, Constants::C_LaunchFrameMax)
-    ];
-    LaunchCooldown = [
-        ML::Clamp(Meta_Launch1_Cooldown, 0, Constants::C_LaunchCooldownMax),
-        ML::Clamp(Meta_Launch2_Cooldown, 0, Constants::C_LaunchCooldownMax),
-        ML::Clamp(Meta_Launch3_Cooldown, 0, Constants::C_LaunchCooldownMax),
-        ML::Clamp(Meta_Launch4_Cooldown, 0, Constants::C_LaunchCooldownMax)
-    ];
-    LaunchGround = [Meta_Launch1_Ground, Meta_Launch2_Ground, Meta_Launch3_Ground, Meta_Launch4_Ground];
-    LaunchAmount = [
-        ML::Clamp(Meta_Launch1_Amount, 0, Constants::C_LaunchAmountMax),
-        ML::Clamp(Meta_Launch2_Amount, 0, Constants::C_LaunchAmountMax),
-        ML::Clamp(Meta_Launch3_Amount, 0, Constants::C_LaunchAmountMax),
-        ML::Clamp(Meta_Launch4_Amount, 0, Constants::C_LaunchAmountMax)
-    ];
-    LaunchGain = [
-        ML::Clamp(Meta_Launch1_Gain, 0, Constants::C_LaunchGainMax),
-        ML::Clamp(Meta_Launch2_Gain, 0, Constants::C_LaunchGainMax),
-        ML::Clamp(Meta_Launch3_Gain, 0, Constants::C_LaunchGainMax),
-        ML::Clamp(Meta_Launch4_Gain, 0, Constants::C_LaunchGainMax)
-    ];
-    LaunchRefill = [Meta_Launch1_Refill, Meta_Launch2_Refill, Meta_Launch3_Refill, Meta_Launch4_Refill];
-    LaunchEmpty = [Meta_Launch1_Empty, Meta_Launch2_Empty, Meta_Launch3_Empty, Meta_Launch4_Empty];
+        LaunchOn[Slot] = Fields[Constants::C_LaunchFieldOn] == 1;
+        LaunchUp[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldUp], 0, 9);
+        LaunchDown[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldDown], 0, 9);
+        LaunchSide[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldSide], 0, 9);
+        LaunchDir[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldDir], 0, 7);
+        LaunchFrame[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldFrame], 0, Constants::C_LaunchFrameMax);
+        LaunchCooldown[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldCooldown], 0, Constants::C_LaunchCooldownMax);
+        LaunchGround[Slot] = Fields[Constants::C_LaunchFieldGround] == 1;
+        LaunchAmount[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldAmount], 0, Constants::C_LaunchAmountMax);
+        LaunchGain[Slot] = ML::Clamp(Fields[Constants::C_LaunchFieldGain], 0, Constants::C_LaunchGainMax);
+        LaunchRefill[Slot] = Fields[Constants::C_LaunchFieldRefill] == 1;
+        LaunchEmpty[Slot] = Fields[Constants::C_LaunchFieldEmpty] == 1;
+    }
 
     InitLaunchCharges(_Player, PreviousOn, PreviousCharges, _Respawned);
 

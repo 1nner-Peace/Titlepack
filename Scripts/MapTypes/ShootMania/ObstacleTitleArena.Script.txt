@@ -5,23 +5,10 @@
 #Include "Libs/miltant/Nadeo_Fork/MapType.Script.txt" as MapType
 #Include "Libs/smokegun/Constants.Script.txt" as Constants
 
-// Launch abilities: a checkpoint (or spawn) holds one independent config per key 1..4, and
-// metadata names can't be composed at runtime, so all four blocks are spelled out once in
-// LaunchMetaRead/LaunchMetaWrite and every caller trades an Integer[] of these fields with
-// them (booleans travel as 0/1).
-#Const C_LaunchFieldOn 0
-#Const C_LaunchFieldUp 1
-#Const C_LaunchFieldDown 2
-#Const C_LaunchFieldSide 3
-#Const C_LaunchFieldDir 4
-#Const C_LaunchFieldCooldown 5
-#Const C_LaunchFieldGround 6
-#Const C_LaunchFieldAmount 7
-#Const C_LaunchFieldGain 8
-#Const C_LaunchFieldRefill 9
-#Const C_LaunchFieldEmpty 10
-#Const C_LaunchFieldFrame 11
-#Const C_LaunchFieldCount 12
+// Launch abilities: a checkpoint (or spawn) holds one independent config per key 1..4, kept in
+// one Meta_LaunchConfig array per anchor and traded with every caller as an Integer[] of the
+// Constants::C_LaunchField* fields (booleans travel as 0/1). The field indices and the array layout live in
+// Constants because the mode reads the same array off the same anchors.
 
 // The eight launch directions, laid out clockwise from "straight ahead" in the two
 // player-relative frames (Orientation, Movement), where the picker shows arrows and the mode
@@ -755,68 +742,17 @@ Integer LaunchFlag(Boolean _Value)
 }
 
 /**
- * Launch settings of one key on one anchor, as [On, Up, Down, Side, Dir, Cooldown, Ground]
- * (see the C_LaunchField* indices). Defaults come from the shared Constants, so the
- * mode reads exactly what the editor would show for an anchor that was never edited.
+ * The launch settings an anchor shows when it was never configured — one value per launch field
+ * index, booleans as 0/1.
  *
- * All four key blocks are declared up front — metadata names can't be built at runtime, and
- * keeping the declares at function scope is what every other dialog here does.
+ * Field order is positional in three places and they have to stay in step: here, LaunchMetaClamp's
+ * return, and the array SaveLaunchAbility hands to LaunchMetaWrite. Everything else addresses the
+ * fields by their C_LaunchField* index, so a new field means appending to these three and bumping
+ * C_LaunchFieldCount.
  */
-Integer[] LaunchMetaRead(CAnchorData _Anchor, Integer _Key)
+Integer[] LaunchMetaDefaults()
 {
-    declare metadata Meta_Launch1_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch1_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch1_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch1_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch1_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch1_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch1_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch1_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch1_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch1_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch1_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch1_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare metadata Meta_Launch2_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch2_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch2_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch2_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch2_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch2_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch2_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch2_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch2_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch2_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch2_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch2_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare metadata Meta_Launch3_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch3_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch3_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch3_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch3_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch3_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch3_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch3_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch3_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch3_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch3_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch3_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare metadata Meta_Launch4_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch4_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch4_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch4_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch4_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch4_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch4_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch4_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch4_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch4_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch4_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch4_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare Integer[] Values = [
+    return [
         LaunchFlag(Constants::C_LaunchDefaultOn),
         Constants::C_LaunchDefaultUp,
         Constants::C_LaunchDefaultDown,
@@ -830,48 +766,33 @@ Integer[] LaunchMetaRead(CAnchorData _Anchor, Integer _Key)
         LaunchFlag(Constants::C_LaunchDefaultEmpty),
         Constants::C_LaunchDefaultFrame
     ];
+}
 
-    switch (_Key) {
-        case 1: {
-            Values = [
-                LaunchFlag(Meta_Launch1_On), Meta_Launch1_Up, Meta_Launch1_Down,
-                Meta_Launch1_Side, Meta_Launch1_Dir,
-                Meta_Launch1_Cooldown, LaunchFlag(Meta_Launch1_Ground),
-                Meta_Launch1_Amount, Meta_Launch1_Gain,
-                LaunchFlag(Meta_Launch1_Refill), LaunchFlag(Meta_Launch1_Empty),
-                Meta_Launch1_Frame
-            ];
-        }
-        case 2: {
-            Values = [
-                LaunchFlag(Meta_Launch2_On), Meta_Launch2_Up, Meta_Launch2_Down,
-                Meta_Launch2_Side, Meta_Launch2_Dir,
-                Meta_Launch2_Cooldown, LaunchFlag(Meta_Launch2_Ground),
-                Meta_Launch2_Amount, Meta_Launch2_Gain,
-                LaunchFlag(Meta_Launch2_Refill), LaunchFlag(Meta_Launch2_Empty),
-                Meta_Launch2_Frame
-            ];
-        }
-        case 3: {
-            Values = [
-                LaunchFlag(Meta_Launch3_On), Meta_Launch3_Up, Meta_Launch3_Down,
-                Meta_Launch3_Side, Meta_Launch3_Dir,
-                Meta_Launch3_Cooldown, LaunchFlag(Meta_Launch3_Ground),
-                Meta_Launch3_Amount, Meta_Launch3_Gain,
-                LaunchFlag(Meta_Launch3_Refill), LaunchFlag(Meta_Launch3_Empty),
-                Meta_Launch3_Frame
-            ];
-        }
-        case 4: {
-            Values = [
-                LaunchFlag(Meta_Launch4_On), Meta_Launch4_Up, Meta_Launch4_Down,
-                Meta_Launch4_Side, Meta_Launch4_Dir,
-                Meta_Launch4_Cooldown, LaunchFlag(Meta_Launch4_Ground),
-                Meta_Launch4_Amount, Meta_Launch4_Gain,
-                LaunchFlag(Meta_Launch4_Refill), LaunchFlag(Meta_Launch4_Empty),
-                Meta_Launch4_Frame
-            ];
-        }
+
+/**
+ * Launch settings of one key on one anchor, indexed by the launch field constants. Read out of
+ * the anchor's single Meta_LaunchConfig array — see the layout note in Constants. Whatever the
+ * stored array does not cover keeps its default: an anchor that was never configured, a key past
+ * what was written, or a block saved before a field was added. So the mode reads exactly what the
+ * editor would show, and adding a field costs one entry here rather than twelve declarations.
+ */
+Integer[] LaunchMetaRead(CAnchorData _Anchor, Integer _Key)
+{
+    declare metadata Integer[] Meta_LaunchConfig for _Anchor = [];
+
+    declare Values = LaunchMetaDefaults();
+    if (_Key < 1 || _Key > Constants::C_LaunchKeyCount || Meta_LaunchConfig.count < 1) {
+        return Values;
+    }
+
+    declare Width = Meta_LaunchConfig[0];
+    declare Base = 1 + (_Key - 1) * Width;
+    if (Width < 1 || Meta_LaunchConfig.count < Base + Width) {
+        return Values;
+    }
+
+    for (Field, 0, ML::Min(Width, Constants::C_LaunchFieldCount) - 1) {
+        Values[Field] = Meta_LaunchConfig[Base + Field];
     }
 
     return Values;
@@ -887,181 +808,53 @@ Integer[] LaunchMetaRead(CAnchorData _Anchor, Integer _Key)
  */
 Integer[] LaunchMetaClamp(Integer[] _Values)
 {
-    declare Empty = _Values[C_LaunchFieldEmpty] == 1;
-    declare Refill = _Values[C_LaunchFieldRefill] == 1 && !Empty;
+    declare Empty = _Values[Constants::C_LaunchFieldEmpty] == 1;
+    declare Refill = _Values[Constants::C_LaunchFieldRefill] == 1 && !Empty;
 
     return [
-        _Values[C_LaunchFieldOn],
-        ML::Clamp(_Values[C_LaunchFieldUp], 0, 9),
-        ML::Clamp(_Values[C_LaunchFieldDown], 0, 9),
-        ML::Clamp(_Values[C_LaunchFieldSide], 0, 9),
-        ML::Clamp(_Values[C_LaunchFieldDir], 0, 7),
-        ML::Clamp(_Values[C_LaunchFieldCooldown], 0, Constants::C_LaunchCooldownMax),
-        _Values[C_LaunchFieldGround],
-        ML::Clamp(_Values[C_LaunchFieldAmount], 0, Constants::C_LaunchAmountMax),
-        ML::Clamp(_Values[C_LaunchFieldGain], 0, Constants::C_LaunchGainMax),
+        _Values[Constants::C_LaunchFieldOn],
+        ML::Clamp(_Values[Constants::C_LaunchFieldUp], 0, 9),
+        ML::Clamp(_Values[Constants::C_LaunchFieldDown], 0, 9),
+        ML::Clamp(_Values[Constants::C_LaunchFieldSide], 0, 9),
+        ML::Clamp(_Values[Constants::C_LaunchFieldDir], 0, 7),
+        ML::Clamp(_Values[Constants::C_LaunchFieldCooldown], 0, Constants::C_LaunchCooldownMax),
+        _Values[Constants::C_LaunchFieldGround],
+        ML::Clamp(_Values[Constants::C_LaunchFieldAmount], 0, Constants::C_LaunchAmountMax),
+        ML::Clamp(_Values[Constants::C_LaunchFieldGain], 0, Constants::C_LaunchGainMax),
         LaunchFlag(Refill),
         LaunchFlag(Empty),
-        ML::Clamp(_Values[C_LaunchFieldFrame], 0, Constants::C_LaunchFrameMax)
+        ML::Clamp(_Values[Constants::C_LaunchFieldFrame], 0, Constants::C_LaunchFrameMax)
     ];
 }
 
 
 /**
- * Keys 1-2 of LaunchMetaWrite; _Values is already clamped by the time it gets here.
- */
-Void LaunchMetaWriteKeys12(CAnchorData _Anchor, Integer _Key, Integer[] _Values)
-{
-    declare metadata Meta_Launch1_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch1_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch1_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch1_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch1_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch1_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch1_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch1_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch1_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch1_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch1_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch1_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare metadata Meta_Launch2_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch2_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch2_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch2_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch2_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch2_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch2_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch2_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch2_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch2_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch2_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch2_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare On = _Values[C_LaunchFieldOn] == 1;
-    declare Ground = _Values[C_LaunchFieldGround] == 1;
-    declare Refill = _Values[C_LaunchFieldRefill] == 1;
-    declare Empty = _Values[C_LaunchFieldEmpty] == 1;
-
-    switch (_Key) {
-        case 1: {
-            Meta_Launch1_On = On;
-            Meta_Launch1_Up = _Values[C_LaunchFieldUp];
-            Meta_Launch1_Down = _Values[C_LaunchFieldDown];
-            Meta_Launch1_Side = _Values[C_LaunchFieldSide];
-            Meta_Launch1_Dir = _Values[C_LaunchFieldDir];
-            Meta_Launch1_Frame = _Values[C_LaunchFieldFrame];
-            Meta_Launch1_Cooldown = _Values[C_LaunchFieldCooldown];
-            Meta_Launch1_Ground = Ground;
-            Meta_Launch1_Amount = _Values[C_LaunchFieldAmount];
-            Meta_Launch1_Gain = _Values[C_LaunchFieldGain];
-            Meta_Launch1_Refill = Refill;
-            Meta_Launch1_Empty = Empty;
-        }
-        case 2: {
-            Meta_Launch2_On = On;
-            Meta_Launch2_Up = _Values[C_LaunchFieldUp];
-            Meta_Launch2_Down = _Values[C_LaunchFieldDown];
-            Meta_Launch2_Side = _Values[C_LaunchFieldSide];
-            Meta_Launch2_Dir = _Values[C_LaunchFieldDir];
-            Meta_Launch2_Frame = _Values[C_LaunchFieldFrame];
-            Meta_Launch2_Cooldown = _Values[C_LaunchFieldCooldown];
-            Meta_Launch2_Ground = Ground;
-            Meta_Launch2_Amount = _Values[C_LaunchFieldAmount];
-            Meta_Launch2_Gain = _Values[C_LaunchFieldGain];
-            Meta_Launch2_Refill = Refill;
-            Meta_Launch2_Empty = Empty;
-        }
-    }
-}
-
-
-/**
- * Keys 3-4 of LaunchMetaWrite; _Values is already clamped by the time it gets here.
- */
-Void LaunchMetaWriteKeys34(CAnchorData _Anchor, Integer _Key, Integer[] _Values)
-{
-    declare metadata Meta_Launch3_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch3_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch3_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch3_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch3_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch3_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch3_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch3_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch3_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch3_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch3_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch3_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare metadata Meta_Launch4_On for _Anchor = Constants::C_LaunchDefaultOn;
-    declare metadata Meta_Launch4_Up for _Anchor = Constants::C_LaunchDefaultUp;
-    declare metadata Meta_Launch4_Down for _Anchor = Constants::C_LaunchDefaultDown;
-    declare metadata Meta_Launch4_Side for _Anchor = Constants::C_LaunchDefaultSide;
-    declare metadata Meta_Launch4_Dir for _Anchor = Constants::C_LaunchDefaultDir;
-    declare metadata Meta_Launch4_Frame for _Anchor = Constants::C_LaunchDefaultFrame;
-    declare metadata Meta_Launch4_Cooldown for _Anchor = Constants::C_LaunchDefaultCooldown;
-    declare metadata Meta_Launch4_Ground for _Anchor = Constants::C_LaunchDefaultGround;
-    declare metadata Meta_Launch4_Amount for _Anchor = Constants::C_LaunchDefaultAmount;
-    declare metadata Meta_Launch4_Gain for _Anchor = Constants::C_LaunchDefaultGain;
-    declare metadata Meta_Launch4_Refill for _Anchor = Constants::C_LaunchDefaultRefill;
-    declare metadata Meta_Launch4_Empty for _Anchor = Constants::C_LaunchDefaultEmpty;
-
-    declare On = _Values[C_LaunchFieldOn] == 1;
-    declare Ground = _Values[C_LaunchFieldGround] == 1;
-    declare Refill = _Values[C_LaunchFieldRefill] == 1;
-    declare Empty = _Values[C_LaunchFieldEmpty] == 1;
-
-    switch (_Key) {
-        case 3: {
-            Meta_Launch3_On = On;
-            Meta_Launch3_Up = _Values[C_LaunchFieldUp];
-            Meta_Launch3_Down = _Values[C_LaunchFieldDown];
-            Meta_Launch3_Side = _Values[C_LaunchFieldSide];
-            Meta_Launch3_Dir = _Values[C_LaunchFieldDir];
-            Meta_Launch3_Frame = _Values[C_LaunchFieldFrame];
-            Meta_Launch3_Cooldown = _Values[C_LaunchFieldCooldown];
-            Meta_Launch3_Ground = Ground;
-            Meta_Launch3_Amount = _Values[C_LaunchFieldAmount];
-            Meta_Launch3_Gain = _Values[C_LaunchFieldGain];
-            Meta_Launch3_Refill = Refill;
-            Meta_Launch3_Empty = Empty;
-        }
-        case 4: {
-            Meta_Launch4_On = On;
-            Meta_Launch4_Up = _Values[C_LaunchFieldUp];
-            Meta_Launch4_Down = _Values[C_LaunchFieldDown];
-            Meta_Launch4_Side = _Values[C_LaunchFieldSide];
-            Meta_Launch4_Dir = _Values[C_LaunchFieldDir];
-            Meta_Launch4_Frame = _Values[C_LaunchFieldFrame];
-            Meta_Launch4_Cooldown = _Values[C_LaunchFieldCooldown];
-            Meta_Launch4_Ground = Ground;
-            Meta_Launch4_Amount = _Values[C_LaunchFieldAmount];
-            Meta_Launch4_Gain = _Values[C_LaunchFieldGain];
-            Meta_Launch4_Refill = Refill;
-            Meta_Launch4_Empty = Empty;
-        }
-    }
-}
-
-
-/**
- * One key's launch settings onto an anchor. The values are clamped once here, then handed to the
- * half that owns that key: metadata names can't be composed at runtime, so all four keys have to
- * be spelled out, and all four in one function is more statements than the linter allows.
+ * One key's launch settings onto an anchor, into the single Meta_LaunchConfig array all four keys
+ * share (layout in Constants). The array is rebuilt from what the anchor currently reads back
+ * rather than patched in place: that widens a block saved before a field existed and fills in the
+ * keys never configured, so writing one key can never leave another behind a short block.
  */
 Void LaunchMetaWrite(CAnchorData _Anchor, Integer _Key, Integer[] _Values)
 {
-    if (_Values.count < C_LaunchFieldCount) {
+    if (_Key < 1 || _Key > Constants::C_LaunchKeyCount || _Values.count < Constants::C_LaunchFieldCount) {
         return;
     }
 
-    declare Values = LaunchMetaClamp(_Values);
-    if (_Key <= 2) {
-        LaunchMetaWriteKeys12(_Anchor, _Key, Values);
-    } else {
-        LaunchMetaWriteKeys34(_Anchor, _Key, Values);
+    declare metadata Integer[] Meta_LaunchConfig for _Anchor = [];
+    declare Clamped = LaunchMetaClamp(_Values);
+
+    declare Integer[] Config = [Constants::C_LaunchFieldCount];
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        declare Values = LaunchMetaRead(_Anchor, Key);
+        if (Key == _Key) {
+            Values = Clamped;
+        }
+        foreach (Value in Values) {
+            Config.add(Value);
+        }
     }
+
+    Meta_LaunchConfig = Config;
 }
 
 
@@ -1096,7 +889,7 @@ Text LaunchKeyPicker(CAnchorData _Anchor, Text _Position)
         declare TextWidth = ""^Width;
 
         declare Values = LaunchMetaRead(_Anchor, Key);
-        if (Values[C_LaunchFieldOn] == 1) {
+        if (Values[Constants::C_LaunchFieldOn] == 1) {
             Highlights ^= """<quad pos="{{{TextLeftX}}} 1" size="{{{TextWidth}}} 7" bgcolor="4777C1FF"/>""";
         }
         Labels ^= """
@@ -2195,18 +1988,18 @@ Void EditLaunchAbility(CAnchorData _Anchor, Integer _Key)
     declare Boolean LaunchEmpty for ManialinkPage = False;
 
     declare Values = LaunchMetaRead(_Anchor, _Key);
-    LaunchOn = Values[C_LaunchFieldOn] == 1;
-    LaunchUp = Values[C_LaunchFieldUp];
-    LaunchDown = Values[C_LaunchFieldDown];
-    LaunchSide = Values[C_LaunchFieldSide];
-    LaunchDir = Values[C_LaunchFieldDir];
-    LaunchFrame = ML::Clamp(Values[C_LaunchFieldFrame], 0, Constants::C_LaunchFrameMax);
-    LaunchCooldown = Values[C_LaunchFieldCooldown];
-    LaunchGround = Values[C_LaunchFieldGround] == 1;
-    LaunchAmount = Values[C_LaunchFieldAmount];
-    LaunchGain = Values[C_LaunchFieldGain];
-    LaunchRefill = Values[C_LaunchFieldRefill] == 1;
-    LaunchEmpty = Values[C_LaunchFieldEmpty] == 1;
+    LaunchOn = Values[Constants::C_LaunchFieldOn] == 1;
+    LaunchUp = Values[Constants::C_LaunchFieldUp];
+    LaunchDown = Values[Constants::C_LaunchFieldDown];
+    LaunchSide = Values[Constants::C_LaunchFieldSide];
+    LaunchDir = Values[Constants::C_LaunchFieldDir];
+    LaunchFrame = ML::Clamp(Values[Constants::C_LaunchFieldFrame], 0, Constants::C_LaunchFrameMax);
+    LaunchCooldown = Values[Constants::C_LaunchFieldCooldown];
+    LaunchGround = Values[Constants::C_LaunchFieldGround] == 1;
+    LaunchAmount = Values[Constants::C_LaunchFieldAmount];
+    LaunchGain = Values[Constants::C_LaunchFieldGain];
+    LaunchRefill = Values[Constants::C_LaunchFieldRefill] == 1;
+    LaunchEmpty = Values[Constants::C_LaunchFieldEmpty] == 1;
 
     /// --- Manialink
     declare Properties = """

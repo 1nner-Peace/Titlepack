@@ -171,6 +171,33 @@
 #Const C_LaunchChargeDelayPercent 50		// pause after a charge completes, % of the fill time
 #Const C_LaunchDefaultRefill False			// True: entering the section tops this key back up
 #Const C_LaunchDefaultEmpty False			// True: entering the section (and every respawn in it) leaves it empty
+// How an anchor persists all four keys: ONE metadata array, Meta_LaunchConfig, rather than a
+// Meta_Launch<Key>_<Field> name per field. Metadata names cannot be composed at runtime, so the
+// scalar form had to spell out 4 keys x 12 fields three times over (editor read, editor write,
+// mode read) and still could not be written in one function under the linter's statement cap.
+// Array metadata for an anchor was verified to survive a map save/load in this engine version
+// (2026-08-17): stored per anchor, length preserved, readable from both the editor and the mode.
+//
+// Layout: element 0 is the field width each key block was written with, then C_LaunchKeyCount
+// blocks of that width, key 1 first — so key K field F sits at 1 + (K-1)*Width + F. Storing the
+// width is what lets a field be added later without invalidating existing maps: a block narrower
+// than C_LaunchFieldCount is read as far as it goes rather than rejected. The editor fills the
+// missing tail with the defaults above and rewrites the anchor at full width on the next save;
+// the mode reads that tail as 0 until then, so a new field wants a 0-equivalent default if old
+// maps should keep behaving. An absent or malformed array grants no keys at all.
+#Const C_LaunchFieldOn 0
+#Const C_LaunchFieldUp 1
+#Const C_LaunchFieldDown 2
+#Const C_LaunchFieldSide 3
+#Const C_LaunchFieldDir 4
+#Const C_LaunchFieldCooldown 5
+#Const C_LaunchFieldGround 6
+#Const C_LaunchFieldAmount 7
+#Const C_LaunchFieldGain 8
+#Const C_LaunchFieldRefill 9
+#Const C_LaunchFieldEmpty 10
+#Const C_LaunchFieldFrame 11
+#Const C_LaunchFieldCount 12				// append new fields above this and bump it; do not renumber
 // How a key press reaches the mode: the action reports its own activation (SendRulesEvent
 // "press" -> OnActionCustomEvent), the way Nadeo's key-bound shield action and
 // Actions/Sneak.Script.txt do, and the mode reads the key off Event.ActionId. The two
