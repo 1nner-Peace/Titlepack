@@ -70,12 +70,25 @@
 #Const C_Score_Normal 0
 #Const C_Score_Survival 1
 
-// Trampoline (encoding v3: variant = base + up*1000 + down*100 + dir*10 + horiz;
-// must match C_VariantBase / C_VariantBaseRel in Actions/Trampoline.Script.txt).
-// The base picks the frame the dir digit is read in: the world compass table for pads,
-// the player's own aim for the key-triggered launch abilities.
-#Const C_TrampolineVariantBase 10000			// dir 0..7 = world compass step (pads)
-#Const C_TrampolineVariantBaseRelative 20000	// dir 0..7 = 45 deg step from the owner's aim (launch keys)
+// Trampoline (encoding v4: variant = base + up*1000 + down*100 + dir*10 + horiz;
+// must match C_VariantBase / C_VariantBaseRel / C_VariantBaseMov in
+// Actions/Trampoline.Script.txt).
+// The base picks the frame the dir digit is read in. Every frame is open to both triggers:
+// a pad and a launch key each carry their own "Relative to" setting (see C_LaunchFrame*).
+#Const C_TrampolineVariantBase 10000			// dir 0..7 = world compass step
+#Const C_TrampolineVariantBaseRelative 20000	// dir 0..7 = 45 deg step from the owner's aim
+#Const C_TrampolineVariantBaseMovement 30000	// dir 0..7 = 45 deg step from the owner's travel yaw
+
+// The frames the editor's "Relative to:" picker offers, in picker order. Stored per pad
+// (Meta_TrampolineFrame) and per key (Meta_Launch<N>_Frame), and mapped to the bases above
+// by LaunchFrameBase in the mode. The two defaults differ only so maps authored before the
+// picker existed keep the frame they were written in — pads were world-only, keys aim-only.
+#Const C_LaunchFrameWorld 0
+#Const C_LaunchFrameOrientation 1
+#Const C_LaunchFrameMovement 2
+#Const C_LaunchFrameMax 2						// clamp ceiling for either Frame metadata
+#Const C_TrampolineDefaultFrame 0				// C_LaunchFrameWorld
+#Const C_LaunchDefaultFrame 1					// C_LaunchFrameOrientation
 #Const C_TrampolineDefaultUp 5
 #Const C_TrampolineDefaultDown 0
 #Const C_TrampolineDefaultCompass 0
@@ -91,6 +104,8 @@
 #Const C_TrampolineTouchResetGap 400		// ms without touch events after which the delay timer resets
 #Const C_TrampolineTouchMaxDist 6.			// arming guard: must span the item's TriggerShape reach (a 6x6 pad corner is ~4.24m) yet stay < a respawn distance
 #Const C_TrampolineAllowBothVertical True	// False: up > 0 suppresses the down blast
+// Calibration belongs to the frame, not to the trigger: these two are what the WORLD frame
+// needs, whether a pad or a launch key picked it.
 #Const C_TrampolineCompassOffset 0			// calibration: action compass index that the editor's "N" maps to
 #Const C_TrampolineCompassMirror True		// calibration: flip the rotation sense (E/W swapped in-game)
 // PvP window: UsePvPWeapons is global (can't be gated per-player), so it must be open only as
@@ -116,11 +131,13 @@
 	"TrampolineKey3.Action.Gbx",
 	"TrampolineKey4.Action.Gbx"
 ]
-// The launch direction is always relative to where the player looks: dir 0..7 = Forward,
-// Forward-Right, Right, Back-Right, Back, Back-Left, Left, Forward-Left, as the editor's
-// arrow picker lays them out. The action turns the owner's aim yaw by dir*45 deg.
+// In the two player-relative frames the direction reads dir 0..7 = Forward, Forward-Right,
+// Right, Back-Right, Back, Back-Left, Left, Forward-Left, as the editor's arrow picker lays
+// them out. The action turns the owner's aim yaw (Orientation) or travel yaw (Movement) by
+// dir*45 deg — the same formula either way, so both share one rotation sense.
 #Const C_LaunchRelativeMirror True			// calibration: flip the rotation sense (the picker's "right" comes out left in-game).
-											// Separate from C_TrampolineCompassMirror on purpose: pads and keys can be fixed apart.
+											// Separate from C_TrampolineCompassMirror on purpose: the world frame turns around
+											// +Z and the player frames around the player, so they can be fixed apart.
 #Const C_LaunchDefaultOn False				// per-key defaults, shared by the editor dialog and the mode
 #Const C_LaunchDefaultUp 5
 #Const C_LaunchDefaultDown 0
@@ -129,6 +146,26 @@
 #Const C_LaunchDefaultCooldown 500			// ms between two launches on the same key
 #Const C_LaunchDefaultGround False			// True: refuse to launch while airborne
 #Const C_LaunchCooldownMax 10000			// clamp ceiling for Meta_Launch*_Cooldown (ms)
+// Charges: the weapon economy (Gain / Amount / Refill / Empty), rebuilt mode-side for the keys.
+// There is no engine ammo behind an action, so the mode counts the charges itself and the
+// LaunchKeys HUD layer draws them as the bar strip the native weapon gauge shows for ammo.
+// Amount 0 means unlimited (the cooldown is then the only limit, which is how the keys behaved
+// before charges existed) — unlike a weapon, where an amount of 0 leaves the player with no shots.
+#Const C_LaunchDefaultAmount 4				// charges granted per key; 0 = unlimited
+#Const C_LaunchAmountMax 10					// clamp ceiling for Meta_Launch*_Amount (and the HUD's bar cap)
+// Gain is a percentage of one charge per second, so the dialog can show the weapon block's own
+// "Gain (0-1000%)" entry. Stored as an Integer percent rather than the weapon's Real 0..10, so it
+// travels in the Integer[] the editor's LaunchMetaRead/LaunchMetaWrite already trade.
+#Const C_LaunchDefaultGain 100				// 100 % = one charge per second; 0 = spent charges never come back
+#Const C_LaunchGainMax 1000					// clamp ceiling for Meta_Launch*_Gain (percent)
+#Const C_LaunchChargeBaseMs 1000			// ms per charge at 100 % gain
+// The native gauge pauses between charges: a charge finishes, the strip holds for a moment, then
+// the next one starts filling. Firing is not what triggers it — a shot starts the next charge
+// straight away — so a strip coming back from empty reads fill / pause / fill / pause. Kept as a
+// percentage of one charge's fill time so it scales with Gain.
+#Const C_LaunchChargeDelayPercent 50		// pause after a charge completes, % of the fill time
+#Const C_LaunchDefaultRefill False			// True: entering the section tops this key back up
+#Const C_LaunchDefaultEmpty False			// True: entering the section (and every respawn in it) leaves it empty
 // How a key press reaches the mode: the action reports its own activation (SendRulesEvent
 // "press" -> OnActionCustomEvent), the way Nadeo's key-bound shield action and
 // Actions/Sneak.Script.txt do, and the mode reads the key off Event.ActionId. The two

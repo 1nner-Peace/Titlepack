@@ -3,42 +3,60 @@
 #Include "MathLib" as ML
 
 // =====================================================================
-// Trampoline action — encoding v3. FROZEN once built into the Gbx.
+// Trampoline action — encoding v4. FROZEN once built into the Gbx.
 // The mode arms us via ActionSetVariant (0 = disarmed). Read Variant only
 // through its low 16 bits (see "Armed" in main): the high half of the word
 // holds EnergyMax, so the raw value is never 0 and never in range.
 //   Armed = Base + Up*1000 + Down*100 + Dir*10 + Horiz
 //   Up/Down/Horiz = blast strength 0..9 (0 = no bullet on that component)
+// The base picks the FRAME the Dir digit is measured in. Every frame is open
+// to every trigger: pads and key-triggered launch abilities both pick one.
 //   Base 10000 (C_VariantBase)    -> Dir 0..7 is a WORLD direction, straight
 //                                    out of C_CompassDir (index i = i*45 deg
-//                                    from +Z toward +X). Trampoline pads.
+//                                    from +Z toward +X).
 //   Base 20000 (C_VariantBaseRel) -> Dir 0..7 is RELATIVE to where the owner
 //                                    looks: their aim yaw turned by i*45 deg,
 //                                    in the same rotation sense. Dir 0 is
-//                                    straight ahead. The mode's key-triggered
-//                                    launch abilities.
+//                                    straight ahead.
+//   Base 30000 (C_VariantBaseMov) -> Dir 0..7 is RELATIVE to where the owner
+//                                    is travelling: the yaw of the horizontal
+//                                    part of their velocity, turned the same
+//                                    way. Dir 0 is straight along the run.
+//                                    Too slow to have a heading -> no
+//                                    horizontal bullet (see main).
 // Rotation sense, N<->world calibration and the both-vertical policy live
 // MODE-SIDE (Constants::C_TrampolineCompass*, C_LaunchRelativeMirror,
 // C_TrampolineAllowBothVertical), so this Gbx never needs a rebuild for
 // calibration or policy changes.
-// C_VariantBase / C_VariantBaseRel must match
-// Constants::C_TrampolineVariantBase / C_TrampolineVariantBaseRelative.
+// C_VariantBase / C_VariantBaseRel / C_VariantBaseMov must match
+// Constants::C_TrampolineVariantBase / C_TrampolineVariantBaseRelative /
+// C_TrampolineVariantBaseMovement.
 // State_Boolean1 = already fired (reset when the mode zeroes the variant).
 // State_Integer1 = gauge initialized (see main): an instance the mode binds
 // to a key must be activatable, or the press never reaches the mode.
-// State_Integer2 = IsActive on the previous tick, for the press echo.
 // =====================================================================
 #Const C_VariantBase    10000
 #Const C_VariantMax     19989	// base + 9*1000 + 9*100 + 9*10 + 9
 #Const C_VariantBaseRel 20000
 #Const C_VariantMaxRel  29989
+#Const C_VariantBaseMov 30000
+#Const C_VariantMaxMov  39989
+
+// Squared horizontal speed below which the movement frame has nothing to turn around.
+// Squared so no Sqrt is needed (0.5 m/s; a running player is around 10). Under it the
+// horizontal bullet is skipped rather than aimed at an arbitrary yaw — the vertical
+// blasts still fire, so a pad never goes completely silent.
+#Const C_MovementMinSpeedSq 0.25
 
 // Bound instances are gated by their energy gauge and cooldown, so give them a
 // free self-reloading one (pattern proven by Actions/Sneak.Script.txt). Firing
 // itself stays variant-driven and unaffected — this only decides whether pressing
-// the key registers at all. The small cooldown just thins out input events; the
-// launch cooldown the mapper sets is enforced mode-side.
-#Const C_BoundCooldown	100
+// the key registers at all. The launch cooldown the mapper sets is enforced
+// mode-side. Kept down at one tick because it is also the floor on how often a
+// held key can come back if the engine pulses IsActive once per activation
+// rather than holding it true: with the echo below running every tick, that
+// floor is the only thing that could still round off a repeat's timing.
+#Const C_BoundCooldown	10
 #Const C_BoundEnergy		6400
 
 // Projectile models, index = strength - 1. All: self-exploding (very short
@@ -101,17 +119,15 @@ main() {
 	// A bound instance is a key-triggered launch ability: report the key press to the mode
 	// ourselves. The engine's mode-side OnActionEvent is not delivered for custom actions —
 	// Nadeo's shield action and Actions/Sneak.Script.txt report activation the same way. The
-	// mode maps the echo back to a key through the event's ShooterActionSlot. Pad instances
-	// are never bound, so they never send this.
-	// State_Integer2 = IsActive on the previous tick.
-	if (IsBound) {
-		declare WasActive = State_Integer2 == 1;
-		if (IsActive && !WasActive) {
-			State_Integer2 = 1;
-			SendRulesEvent("trampoline", ["press"], Owner, Null);
-		} else if (!IsActive && WasActive) {
-			State_Integer2 = 0;
-		}
+	// mode maps the echo back to a key through the event's ActionId, which names this
+	// instance's own model. Pad instances are never bound, so they never send this.
+	// Holding the key repeats the launch: every tick the key is down echoes, so the
+	// mode fires on the very tick the next charge lands instead of at whatever
+	// interval a timer here would round it to. Nothing throttles it because the mode
+	// gates every echo on the key's charges and cooldown — the extra events are
+	// discarded on arrival, and they only exist while a launch key is actually held.
+	if (IsBound && IsActive) {
+		SendRulesEvent("trampoline", ["press"], Owner, Null);
 	}
 
 	// What the mode armed us with. ActionSetVariant writes only the low 16 bits of the word
@@ -130,10 +146,13 @@ main() {
 		SendRulesEvent("trampoline", [""^Armed], Owner, Null);
 
 		declare Relative = Armed >= C_VariantBaseRel && Armed <= C_VariantMaxRel;
-		if ((Armed >= C_VariantBase && Armed <= C_VariantMax) || Relative) {
+		declare Movement = Armed >= C_VariantBaseMov && Armed <= C_VariantMaxMov;
+		if ((Armed >= C_VariantBase && Armed <= C_VariantMax) || Relative || Movement) {
 			declare Base = C_VariantBase;
 			if (Relative) {
 				Base = C_VariantBaseRel;
+			} else if (Movement) {
+				Base = C_VariantBaseMov;
 			}
 			declare Packed  = Armed - Base;
 			declare Up      = Packed / 1000;
@@ -150,19 +169,35 @@ main() {
 			// opposite the launch direction, aimed/moving outward.
 			if (Horiz > 0) {
 				declare LaunchDir = C_CompassDir[Dir];
-				if (Relative) {
+				// Cleared only by the movement frame, when the owner is too slow to have a
+				// heading: there is no sensible direction to push along, so nothing is pushed.
+				declare HasLaunchDir = True;
+				if (Relative || Movement) {
+					// The yaw the step is measured from: where the owner looks, or where they
+					// are travelling. Both are read here at fire time, not mode-side at arm
+					// time, so they describe the very tick the bullet spawns on.
+					declare FrameX = Owner.AimDirection.X;
+					declare FrameZ = Owner.AimDirection.Z;
+					if (Movement) {
+						FrameX = Owner.Velocity.X;
+						FrameZ = Owner.Velocity.Z;
+						HasLaunchDir = (FrameX * FrameX + FrameZ * FrameZ) >= C_MovementMinSpeedSq;
+					}
 					// Continuous version of the compass table, turned by the picked step:
-					// the horizontal yaw the owner is looking at, plus Dir*45 deg. Sin/Cos
-					// of the yaw avoids normalizing (the flattened aim shrinks as the player
-					// looks up or down); looking exactly straight up or down leaves Atan2 at
-					// 0, so the push falls back to the step measured from +Z instead of
-					// collapsing to nothing.
-					declare Yaw = ML::Atan2(Owner.AimDirection.X, Owner.AimDirection.Z) + Dir * (ML::PI() / 4.);
+					// the horizontal yaw of the frame, plus Dir*45 deg. Sin/Cos of the yaw
+					// avoids normalizing (the flattened aim shrinks as the player looks up or
+					// down); looking exactly straight up or down leaves Atan2 at 0, so the
+					// push falls back to the step measured from +Z instead of collapsing to
+					// nothing. The movement frame has the guard above instead, because a
+					// standing player's velocity is noise rather than a shrunken heading.
+					declare Yaw = ML::Atan2(FrameX, FrameZ) + Dir * (ML::PI() / 4.);
 					LaunchDir = <ML::Sin(Yaw), 0., ML::Cos(Yaw)>;
 				}
-				declare Out = <-LaunchDir.X, 0., -LaunchDir.Z>;
-				declare Position = Owner.Position + <Out.X * C_HorizontalOffset, C_HorizontalHeight, Out.Z * C_HorizontalOffset>;
-				LastProjectileId = Projectile_CreateAtLocation(GetProjectileId(C_HorizontalProjectiles[Horiz - 1]), Null, Position, Out, Out);
+				if (HasLaunchDir) {
+					declare Out = <-LaunchDir.X, 0., -LaunchDir.Z>;
+					declare Position = Owner.Position + <Out.X * C_HorizontalOffset, C_HorizontalHeight, Out.Z * C_HorizontalOffset>;
+					LastProjectileId = Projectile_CreateAtLocation(GetProjectileId(C_HorizontalProjectiles[Horiz - 1]), Null, Position, Out, Out);
+				}
 			}
 
 			// Vertical pushes: both may fire; the MODE decides the policy

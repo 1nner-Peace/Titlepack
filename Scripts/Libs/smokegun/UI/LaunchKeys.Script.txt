@@ -1,0 +1,808 @@
+/************************************************
+* Obstacle Library                              *
+*                                               *
+* Charge strip for the launch abilities: one    *
+* row of bars per action key the player's       *
+* current section grants, drawn above the       *
+* native weapon gauge.                          *
+************************************************/
+
+#Include "Libs/smokegun/Constants.Script.txt" as Constants
+#Include "Libs/miltant/Nadeo_Fork/CustomUI.Script.txt" as CustomUI
+
+#Const Version "2026-08-16"
+#Const ScriptName "LaunchKeys.Script.txt"
+
+/**
+ * The weapon's own bar strip is drawn by the engine (Modules/Common/player_state.Module.Gbx),
+ * which nothing here can reach or reuse, so the same picture is rebuilt from the arrays the mode
+ * publishes in PublishLaunchHud: bars per key, how many of them are lit, the window the bar that
+ * is currently filling spans, and what a press of that key does.
+ *
+ * A row is one line. The strip on the right says how many launches are left; standing left of it
+ * is what one of them is made of — upward, downward and horizontal strength as a digit and the
+ * arrow it belongs to, with the horizontal one's arrow turned to the direction the launch takes. A
+ * strength of 0 draws nothing, so the usual row (upward only) is one digit and one arrow, and the
+ * items that are
+ * drawn pack against the strip's left edge. Key 1 is the top row: rows fill downwards, but the
+ * block stays anchored just above the weapon gauge, so a lone key still sits where the gauge
+ * expects it.
+ *
+ * A horizontal push also carries the frame its direction is measured in — the editor's "Relative
+ * to" picker — because the same arrow means three different things depending on it. The arrow is
+ * drawn the same way in all three, always the direction the editor's picker drew: up is straight
+ * ahead in the two player-relative frames and north in the world one, and every step from there
+ * turns it another 45 deg clockwise. What tells the three apart is the symbol hung off the arrow —
+ * an azure compass for the world, an amber camera for the aim, a violet runner for the travel
+ * direction — and every frame that is on screen spells itself out in a legend line under the block,
+ * once per frame however many keys use it, in the symbol's own colour. A single white "Rel. to:"
+ * stands against the first of those lines and does for all of them: a symbol is a reminder, not an
+ * explanation, and the strip has no room to explain itself four times over.
+ *
+ * Nothing here stands on a card: the strengths, the arrows and the legend draw straight over the
+ * scene, next to bars that are the native gauge's own picture and carry its background.
+ *
+ * The geometry and the colours are measured off a screenshot of the native gauge rather than
+ * guessed. One segment there is a saturated block with a pale core down its middle, wrapped in a
+ * halo that reaches far enough past the block to meet its neighbour's — which is why the gaps
+ * between lit segments glow instead of going black. So a bar is four quads, bottom to top: a flat
+ * halo step standing in for that falloff, a dark trough marking a slot the player has spent (which
+ * the native gauge has no equivalent for — it never shows an empty strip), then the block, then
+ * the core over it. The screenshot was of a red player, and red is what the markup below declares,
+ * but the hue is the player's own: the page script repaints all four quads from the hue the engine
+ * assigned them, which is the same hue the native gauge is drawn in.
+ * An earlier quad draws over a later one, so the markup runs top-down: core, block, trough, halo.
+ * All the halos are emitted after all the blocks, since each one reaches over its neighbours.
+ *
+ * The geometry lives in the page script's own constants (C_BaseY and friends), because a Real
+ * interpolated into the generated text is not guaranteed to come out as a Real literal. The only
+ * thing that has to be kept in step out here is the CustomUI box below — the F8 drag handle — which
+ * has to cover the row slots the page script lays out.
+ */
+// One item of the strengths block: the strength as a digit, and the arrow it belongs to right of
+// it. The item's origin is its own left edge — which the digit sits flush against — so packing the
+// items that are drawn is a matter of handing each one an X.
+//
+// The arrow is a titlepack image rather than an arrow character: the fonts have no diagonal arrow.
+// The image is white, and the tint comes from modulatecolor rather than colorize — colorize
+// modulates a style/substyle texture and is ignored on an image quad.
+// It points up, which is both the upward launch and the horizontal one's "straight ahead", so the
+// two commonest items draw unrotated. The turn that aims the rest is applied to a wrapper frame
+// rather than to the quad — a rotated control spins around its position anchor, while a frame
+// spins around its own origin, which the centred quad sits exactly on.
+//
+// Emitted top down, because an earlier quad draws over a later one: the digit, the arrow, then
+// whatever the caller hangs off it. _Extra is the horizontal item's frame indicator and nothing
+// else draws one, so the item is otherwise the same three ways over.
+// 0.082, 0.780, 1.>
+// 1., 0.588, 0.325>
+Text InfoItem(Text _Name, Text _Rot, Text _Arrow, Text _ArrowColour, Text _Extra) {
+    return """
+        <frame id="Frame_Item{{{_Name}}}" pos="0 0" hidden="1">
+            <label id="Label_Item{{{_Name}}}" pos="1 0" size="3 3" text="0" textsize="1.1" textfont="OswaldMono" textcolor="F4F4F4" halign="left" valign="center2" opacity="1.0"/>
+            <frame id="Frame_Rot{{{_Name}}}" pos="4.7 0" rot="{{{_Rot}}}">
+            <quad pos="0 0" size="4.3 4.3" halign="center" valign="center" keepratio="Fit" image="file://Media/Images/Obstacle/Interface/{{{_Arrow}}}" modulatecolor="{{{_ArrowColour}}}"/>
+            </frame>
+            {{{_Extra}}}
+        </frame>
+    """;
+}
+
+Text GetLayer() {
+    declare KeyCount = Constants::C_LaunchKeyCount;
+    declare BarMax = Constants::C_LaunchAmountMax;
+    // The frames the mode publishes per key, straight out of the editor's "Relative to" picker
+    declare FrameWorld = Constants::C_LaunchFrameWorld;
+    declare FrameOrientation = Constants::C_LaunchFrameOrientation;
+    declare FrameMovement = Constants::C_LaunchFrameMovement;
+
+    // One colour per frame the direction can be measured in, in the two spellings the layer needs:
+    // hex for the markup, and the Vec3 the page script repaints the shared symbol label with when
+    // it switches between them. The two spellings of a colour have to be kept in step by hand.
+    //
+    // The three are a cool/warm/violet triad rather than three neighbours, so a glyph the size of a
+    // digit is still told apart at a glance, and all three are kept bright: they draw straight over
+    // the scene, with no card behind them to hold them up against a white sky.
+    declare ColourWorldHex = "61B5FF";			// = C_ColourWorld (original: 4DB8FF)
+    declare ColourOrientationHex = "FF9366";	// = C_ColourOrientation (original: FFB347)
+    declare ColourMovementHex = "4BFFEC";		// the runner is a styled quad, so this one is hex only (original: B388FF)
+
+    // Drag handle for the F8 UI editor, sized for the widest and tallest the block can get rather
+    // than for what it happens to draw. The rows run up from C_BaseY (-79) and the legend down from
+    // it, so vertically it spans all three legend lines (-79 - 3 * 3.6 = -89.8, minus the 2.35 a
+    // line reaches below its own centre) up to the fourth row slot (-79 + 3 * 4.7 = -64.9, plus
+    // that 2.35 again): -92.15 to -62.55, so 29.6 tall centred on -77.35. Horizontally it covers
+    // C_StripWidth (35.1), the key label right of it, and the widest strengths block left of it
+    // (2 * C_InfoItemWidth + C_InfoSideWidth) — which is why the box sits well left of the strip's
+    // own centre, C_BaseX (-48). None of those constants can be interpolated in from the page
+    // script, so the two literals below have to be kept in step with them by hand.
+    CustomUI::Add("Frame_LaunchKeys", <-59.8, -70.35>, <70.3, 22.0>);
+
+    // One row model holding the widest strip a key can ask for; the page script shows the first
+    // Bars of them and sizes them so the strip keeps a constant width, the way the ammo gauge
+    // makes its bars thinner the more shots the weapon holds.
+    // How faint the halo is is carried by opacity rather than by an alpha byte on the colour,
+    // because the page script overwrites BgColor — a Vec3, with no alpha in it — every time the
+    // player's hue changes, and an alpha that only exists inside the markup literal would not
+    // survive that. The other three quads are opaque and say so by leaving opacity alone.
+    declare Glows = "";
+    declare Bars = "";
+    for (Bar, 0, BarMax - 1) {
+        Glows ^= """
+            <quad id="Quad_BarGlowOut{{{Bar}}}" pos="0 0" size="8 4" halign="right" valign="center" bgcolor="FF2020" opacity="0.25" hidden="1"/>
+        """;
+        // Top to bottom, because an earlier quad draws over a later one: the pale core down the
+        // middle of the block, the block filling the slot, the slot's own dark trough. The halo
+        // goes below all three, so Glows is emitted after Bars in the framemodel.
+        Bars ^= """
+            <quad id="Quad_BarCore{{{Bar}}}" pos="0 0" size="7 0.9" halign="right" valign="center" bgcolor="FFB3B3" hidden="1"/>
+            <quad id="Quad_BarFill{{{Bar}}}" pos="0 0" size="8 1.7" halign="right" valign="center" bgcolor="FF0000" hidden="1"/>
+            <quad id="Quad_BarBg{{{Bar}}}" pos="0 0" size="8 1.7" halign="right" valign="center" bgcolor="2E0505" hidden="1"/>
+        """;
+    }
+
+    // What the horizontal item hangs off its arrow: the symbol naming the frame the direction is
+    // measured in. Both are hidden by default and the page script shows the one the key's frame
+    // calls for, so the item is one control wide whichever frame that is:
+    //  - the frame symbol, one label doing for both the compass and the camera glyph since a key
+    //    is only ever in one frame at a time — which is why its text and colour are the page
+    //    script's to set and the markup leaves them empty;
+    //  - the runner, a quad rather than a glyph because it is a button style and not a character.
+    //    Style textures take colorize, not modulatecolor, and it never changes, so it is tinted
+    //    here rather than at draw time.
+    declare SideExtra = """
+            <label id="Label_FrameSide" pos="9.4 0" size="3.2 3.2" text="" textsize="2.2" halign="center" valign="center2" opacity="1.0" hidden="1"/>
+            <quad id="Quad_FrameSide" pos="9.4 0" size="8.5 8.5" halign="center" valign="center" keepratio="Fit" style="UIConstruction_Buttons" substyle="ActionMaker" colorize="{{{ColourMovementHex}}}" hidden="1"/>
+    """;
+
+    // The strengths line. The two vertical arrows are fixed quarter turns; the horizontal one is
+    // turned by the page script to the direction the launch takes, and reads as a compass rather
+    // than a third vertical arrow because of the ring it is drawn in and its own colour — a launch
+    // straight ahead points its arrow up, exactly where the upward arrow points.
+    declare InfoItems = InfoItem("Up", "0", "arrow-square.png", "FBFBFB", "")
+        ^ InfoItem("Down", "180", "arrow-square.png", "FBFBFB", "")
+        ^ InfoItem("Side", "0", "arrow-circle.png", "FBFBFB", SideExtra);
+
+    declare Rows = "";
+    for (Row, 0, KeyCount - 1) {
+        Rows ^= """<frameinstance id="Frame_LaunchRow{{{Row}}}" modelid="Model_LaunchRow" pos="0 0" hidden="1"/>""";
+    }
+
+    return """
+<manialink version="3" name="Obstacle:LaunchKeys">
+    <frame id="Frame_LaunchKeys" class="LibCustomUI_Module">
+        <framemodel id="Model_LaunchRow">
+            {{{Bars}}}
+            <label id="Label_Key" pos="19.3 -0.2" size="4 3" text="?" textsize="2.6" textfont="OswaldMono" halign="left" valign="center2" opacity="1.0"/>
+            <!-- The strengths sit on the strip's own line, so they carry no offset of their own:
+                 the page script hands each one an X left of the strip and the row frame supplies
+                 the Y. C_RowHeight still has to clear the tallest of them, or two rows run into
+                 one another. -->
+            {{{InfoItems}}}
+            {{{Glows}}}
+        </framemodel>
+        {{{Rows}}}
+        <!-- The legend, laid out by the page script. The names are left-aligned so that they stack
+             into a column under one another; the prefix is right-aligned into the gap left of that
+             column, which is what lets the page script place it without measuring it. -->
+        <label id="Label_RelPrefix" pos="0 0" size="20 3" text="Relative to:" textsize="0.6" textfont="OswaldMono" textcolor="FFFFFF" halign="right" valign="center2" opacity="1.0" hidden="1"/>
+        <label id="Label_RelWorld" pos="0 0" size="20 3" text="World" textsize="0.6" textfont="OswaldMono" textcolor="{{{ColourWorldHex}}}" halign="left" valign="center2" opacity="1.0" hidden="1"/>
+        <label id="Label_RelOrientation" pos="0 0" size="20 3" text="Orientation" textsize="0.6" textfont="OswaldMono" textcolor="{{{ColourOrientationHex}}}" halign="left" valign="center2" opacity="1.0" hidden="1"/>
+        <label id="Label_RelMovement" pos="0 0" size="20 3" text="Movement" textsize="0.6" textfont="OswaldMono" textcolor="{{{ColourMovementHex}}}" halign="left" valign="center2" opacity="1.0" hidden="1"/>
+    </frame>
+<script><!--
+    #Include "MathLib" as ML
+    #Include "ColorLib" as CL
+
+    #Const C_KeyCount {{{KeyCount}}}
+    #Const C_BarMax {{{BarMax}}}
+
+    // Where the bottom row sits, and how the rows above it are spaced. The strip is a
+    // CustomUI module, so the placement can be changed with F8. The spacing has to clear the
+    // tallest thing a row draws — the disc behind the horizontal arrow, 3.6 across — so two rows
+    // never run into one another.
+    #Const C_BaseX -48.
+    #Const C_BaseY -79.
+    #Const C_RowHeight 4.7
+
+    // Four segments spanning 36 units with 1.2 between them, each
+    // one 1.7 tall with a 0.9 pale core inset 0.4 from its ends, in a halo reaching 1.15 past it.
+    #Const C_StripWidth 35.1
+    #Const C_BarGap 1.4
+    #Const C_BarHeight 1.85
+    #Const C_CoreHeight 0.9
+    #Const C_CoreInset 0.2
+    #Const C_GlowOutPad 0.7
+    #Const C_GlowOutHeight 2.8
+
+    // The four quads all draw in the player's own hue and differ only in how much of it they
+    // carry, so the red that was measured off the screenshot survives as saturations of it:
+    // FF0000 is a full-saturation hue, FFB3B3 the same hue washed out to 0.3, and the halo's
+    // FF2020 sits at 0.875 behind its own low opacity. Those three are at full value, because the
+    // native gauge dims a bar by fading it rather than by darkening its colour.
+    //
+    // The trough is the one quad the screenshot could not supply, the native gauge having no empty
+    // strip to measure: it is a solid dark step of the hue rather than a faint wash of it, so that
+    // an empty slot reads the same over a bright wall as it does over a dark one. C_ValTrough is
+    // the knob for how far down it sits — it is the whole of how bright an empty slot looks.
+    #Const C_SatFill 1.
+    #Const C_SatCore 0.3
+    #Const C_SatHalo 0.875
+    #Const C_SatTrough 0.9
+    #Const C_ValTrough 0.3
+
+    // The strengths block: how wide a slot one item takes, how much room is left between the block
+    // and the strip it stands next to, and the order the items are packed in. The names are the
+    // halves of the ids InfoItem built, so the cache below can read all three the same way — and
+    // the order they are listed in is the order they appear on screen.
+    //
+    // An item's slot is wider than the item, which stops about 1.4 short of the slot's right edge,
+    // so C_InfoGap is the extra breathing room on top of that — measured from the slot, not from
+    // the digit.
+    #Const C_InfoItemWidth 8.0
+    #Const C_InfoGap 0.3
+    #Const C_InfoItemNames ["Up", "Down", "Side"]
+    #Const C_InfoItemCount 3
+    #Const C_InfoItemSide 2	// the one item that is turned, so its slot has to be named
+    // The horizontal item is the wider one: whichever frame it is in, it carries a third control
+    // (the frame symbol, centred on 8.9 and 4.4 across) after the two every item has. Its slot
+    // keeps the same 1.15 of slack past its last control that C_InfoItemWidth leaves past the
+    // arrow, so the two widths pack against one another evenly.
+    #Const C_InfoSideWidth 12.8
+
+    // The frames a horizontal direction can be measured in, as the mode publishes them. Their
+    // order is the picker's own, which is also the order the legend lists them in, so a player
+    // reading the two sees one order.
+    #Const C_FrameWorld {{{FrameWorld}}}
+    #Const C_FrameOrientation {{{FrameOrientation}}}
+    #Const C_FrameMovement {{{FrameMovement}}}
+    #Const C_FrameCount 3
+    // The two frame symbols that are font glyphs rather than button styles: a compass for the
+    // world frame, a camera for the aim. The runner the movement frame uses has no glyph, so it
+    // is a styled quad next to this label instead. Both are drawn in the game's default font,
+    // which is where these live — OswaldMono, which the digits are set in, has neither.
+    #Const C_GlyphCompass ""
+    #Const C_GlyphCamera "🎥"
+    #Const C_ColourWorld <0.380, 0.710, 1.>			// = 4DB8FF, the hex the legend label carries
+    #Const C_ColourOrientation <1., 0.576, 0.4>	// = FFB347, likewise
+    // The legend lines under the rows: how far apart they sit, and how much air stands between
+    // "Rel. to:" and the column of names it is written against. The legend is inset from the
+    // strip's left edge by C_InfoSlack because it is the only thing here not laid out in a slot —
+    // an item's slot already ends that far past its last control, and this keeps the two flush.
+    // C_LegendOffsetY shifts the whole block off the strip's base line without moving the rows:
+    // negative pushes it further down, positive pulls it back up under the bottom row.
+    #Const C_LegendHeight 2.7
+    #Const C_LegendOffsetY -1.4
+    #Const C_LegendGap 1.2
+    #Const C_InfoSlack 1.5
+
+    Real Clamp01(Real _Value) {
+        if (_Value < 0.) {
+            return 0.;
+        }
+        if (_Value > 1.) {
+            return 1.;
+        }
+        return _Value;
+    }
+
+    Boolean SameInts(Integer[] _Left, Integer[] _Right) {
+        if (_Left.count != _Right.count) {
+            return False;
+        }
+        foreach (Index => Value in _Left) {
+            if (_Right[Index] != Value) {
+                return False;
+            }
+        }
+        return True;
+    }
+
+    main() {
+        {{{CustomUI::InjectMLInit()}}}
+        wait(InputPlayer != Null && Page != Null);
+
+        // Cached once. Looking the quads up with GetFirstChild inside the draw loop is what forced
+        // the throttle that made the fill animation stutter. Quad N of row R lives at
+        // R * C_BarMax + N in every one of these, since rows are appended in order and each one
+        // appends exactly C_BarMax of each quad — so the mapping survives a row that fails to
+        // resolve.
+        declare CMlFrame[] Frame_Rows;
+        declare CMlQuad[] Quads_GlowOut;
+        declare CMlQuad[] Quads_BarBg;
+        declare CMlQuad[] Quads_BarFill;
+        declare CMlQuad[] Quads_BarCore;
+        // The strengths line, indexed the same way at R * C_InfoItemCount + I. Only the
+        // horizontal item is ever turned, but caching all three rotation frames keeps one rule.
+        declare CMlFrame[] Frames_Item;
+        declare CMlLabel[] Labels_Item;
+        declare CMlFrame[] Frames_Rot;
+        // The horizontal item's frame indicator: one entry per row, since only that item has one.
+        declare CMlLabel[] Labels_FrameSide;
+        declare CMlQuad[] Quads_FrameSide;
+        for (Row, 0, C_KeyCount - 1) {
+            declare Frame_Row <=> (Page.GetFirstChild("Frame_LaunchRow"^Row) as CMlFrame);
+            if (Frame_Row == Null) {
+                continue;
+            }
+            // Row index and key never part company: hiding a row below only moves this one up,
+            // it never renumbers it.
+            declare Label_Key <=> (Frame_Row.GetFirstChild("Label_Key") as CMlLabel);
+            Label_Key.Value = ""^(Row + 1);
+            Frame_Rows.add(Frame_Row);
+
+            foreach (Name in C_InfoItemNames) {
+                declare CMlFrame Frame_Item <=> (Frame_Row.GetFirstChild("Frame_Item"^Name) as CMlFrame);
+                declare CMlLabel Label_Item <=> (Frame_Row.GetFirstChild("Label_Item"^Name) as CMlLabel);
+                declare CMlFrame Frame_Rot <=> (Frame_Row.GetFirstChild("Frame_Rot"^Name) as CMlFrame);
+                Frames_Item.add(Frame_Item);
+                Labels_Item.add(Label_Item);
+                Frames_Rot.add(Frame_Rot);
+            }
+
+            declare CMlLabel Label_FrameSide <=> (Frame_Row.GetFirstChild("Label_FrameSide") as CMlLabel);
+            declare CMlQuad Quad_FrameSide <=> (Frame_Row.GetFirstChild("Quad_FrameSide") as CMlQuad);
+            Labels_FrameSide.add(Label_FrameSide);
+            Quads_FrameSide.add(Quad_FrameSide);
+
+            for (Bar, 0, C_BarMax - 1) {
+                declare CMlQuad Quad_GlowOut <=> (Frame_Row.GetFirstChild("Quad_BarGlowOut"^Bar) as CMlQuad);
+                declare CMlQuad Quad_BarBg <=> (Frame_Row.GetFirstChild("Quad_BarBg"^Bar) as CMlQuad);
+                declare CMlQuad Quad_BarFill <=> (Frame_Row.GetFirstChild("Quad_BarFill"^Bar) as CMlQuad);
+                declare CMlQuad Quad_BarCore <=> (Frame_Row.GetFirstChild("Quad_BarCore"^Bar) as CMlQuad);
+                Quads_GlowOut.add(Quad_GlowOut);
+                Quads_BarBg.add(Quad_BarBg);
+                Quads_BarFill.add(Quad_BarFill);
+                Quads_BarCore.add(Quad_BarCore);
+            }
+        }
+
+        // The legend is the block's own, not a row's, so it is looked up once off the page. The
+        // three name labels are held in the frames' own order (world, orientation, movement), so
+        // the layout pass can walk them against the flags it raises while counting the rows.
+        declare CMlLabel[] Labels_Legend;
+        declare CMlLabel Label_RelWorld <=> (Page.GetFirstChild("Label_RelWorld") as CMlLabel);
+        declare CMlLabel Label_RelOrientation <=> (Page.GetFirstChild("Label_RelOrientation") as CMlLabel);
+        declare CMlLabel Label_RelMovement <=> (Page.GetFirstChild("Label_RelMovement") as CMlLabel);
+        Labels_Legend.add(Label_RelWorld);
+        Labels_Legend.add(Label_RelOrientation);
+        Labels_Legend.add(Label_RelMovement);
+        declare Label_RelPrefix <=> (Page.GetFirstChild("Label_RelPrefix") as CMlLabel);
+        // Where the legend's right edge sits: against the strip's left edge, which no longer moves
+        // once the strip's width is fixed. The names hang left of it, so what does move with the
+        // set of lines that are up is where the column starts — the layout pass' business.
+        declare InfoRightX = C_BaseX - C_StripWidth / 2. - C_InfoGap;
+        declare LegendRightX = InfoRightX - C_InfoSlack;
+
+        // What the strip currently shows. The layout only has to be rebuilt when the mode
+        // publishes something new; every other frame just redraws the bar that is filling.
+        declare Integer[] Shown_Bars = [];
+        declare Integer[] Shown_Filled = [];
+        // The strengths only move when the player enters a section that configures the keys
+        // differently — which the bar counts alone would miss, since two checkpoints can grant
+        // the same number of charges behind a different launch.
+        declare Integer[] Shown_Up = [];
+        declare Integer[] Shown_Down = [];
+        declare Integer[] Shown_Side = [];
+        declare Integer[] Shown_Dir = [];
+        declare Integer[] Shown_Frame = [];
+        declare Boolean Shown_Anything = False;
+        // The hue the quads are currently painted in. Out of any hue's range, so the first frame
+        // that has a player to read always repaints.
+        declare Real Shown_Hue = -1.;
+
+        // One entry per visible row, all appended together by the layout pass: which key the row
+        // draws, which quad of it is filling (flat index, -1 = none) and how wide a full bar is.
+        declare Integer[] Row_Key = [];
+        declare Integer[] Row_Charging = [];
+        declare Real[] Row_BarWidth = [];
+
+        while (True) {
+            yield;
+
+            if (!PageIsVisible) {
+                continue;
+            }
+            // Ahead of every early exit below: this is what the F8 editor moves and hides the
+            // strip with, and it has to keep running even on frames that draw nothing.
+            {{{CustomUI::InjectMLLoop()}}}
+
+            // Read off whoever is being watched, so a spectator sees the runner's charges. The
+            // mode only publishes while a player is spawned, so what it left behind is stale
+            // until they spawn again: the Spawned check is what hides it in the meantime.
+            declare LocalPlayer <=> InputPlayer;
+            if (GUIPlayer != Null) LocalPlayer <=> GUIPlayer;
+            declare Drawable = False;
+            if (LocalPlayer != Null) {
+                Drawable = LocalPlayer.SpawnStatus == CSmPlayer::ESpawnStatus::Spawned;
+            }
+
+            if (!Drawable) {
+                if (Shown_Anything) {
+                    foreach (Frame_Empty in Frame_Rows) {
+                        Frame_Empty.Visible = False;
+                    }
+                    foreach (Label_Empty in Labels_Legend) {
+                        if (Label_Empty != Null) Label_Empty.Visible = False;
+                    }
+                    if (Label_RelPrefix != Null) Label_RelPrefix.Visible = False;
+                    Shown_Bars = [];
+                    Shown_Filled = [];
+                    Shown_Up = [];
+                    Shown_Down = [];
+                    Shown_Side = [];
+                    Shown_Dir = [];
+                    Shown_Frame = [];
+                    Row_Key = [];
+                    Row_Charging = [];
+                    Row_BarWidth = [];
+                    Shown_Anything = False;
+                }
+                continue;
+            }
+            Shown_Anything = True;
+
+            // The engine hands every player a hue when they join and draws their weapon gauge in
+            // it, so the strip has to follow or it stops reading as a part of that gauge. One hue
+            // paints all four quads, at the saturations the constants above carry. Every quad is
+            // repainted, visible or not, since the layout pass owns which of them are shown and
+            // may show one that this pass skipped. Reading it off LocalPlayer means the same
+            // comparison also catches a spectator switching to a player of another colour.
+            declare Hue = LocalPlayer.GetLinearHue;
+            if (Hue != Shown_Hue) {
+                Shown_Hue = Hue;
+                declare ColorFill = CL::HsvToRgb(<Hue, C_SatFill, 1.>);
+                declare ColorCore = CL::HsvToRgb(<Hue, C_SatCore, 1.>);
+                declare ColorHalo = CL::HsvToRgb(<Hue, C_SatHalo, 1.>);
+                declare ColorTrough = CL::HsvToRgb(<Hue, C_SatTrough, C_ValTrough>);
+                foreach (Quad_Fill in Quads_BarFill) {
+                    if (Quad_Fill != Null) Quad_Fill.BgColor = ColorFill;
+                }
+                foreach (Quad_Core in Quads_BarCore) {
+                    if (Quad_Core != Null) Quad_Core.BgColor = ColorCore;
+                }
+                foreach (Quad_Trough in Quads_BarBg) {
+                    if (Quad_Trough != Null) Quad_Trough.BgColor = ColorTrough;
+                }
+                foreach (Quad_Halo in Quads_GlowOut) {
+                    if (Quad_Halo != Null) Quad_Halo.BgColor = ColorHalo;
+                }
+            }
+
+            declare netread Integer[] Net_LaunchBars for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchFilled for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchPartFrom for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchPartTo for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchUp for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchDown for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchSide for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchDir for LocalPlayer = [];
+            declare netread Integer[] Net_LaunchFrame for LocalPlayer = [];
+
+            if (!SameInts(Shown_Bars, Net_LaunchBars) || !SameInts(Shown_Filled, Net_LaunchFilled)
+                || !SameInts(Shown_Up, Net_LaunchUp) || !SameInts(Shown_Down, Net_LaunchDown)
+                || !SameInts(Shown_Side, Net_LaunchSide) || !SameInts(Shown_Dir, Net_LaunchDir)
+                || !SameInts(Shown_Frame, Net_LaunchFrame)) {
+                Shown_Bars = Net_LaunchBars;
+                Shown_Filled = Net_LaunchFilled;
+                Shown_Up = Net_LaunchUp;
+                Shown_Down = Net_LaunchDown;
+                Shown_Side = Net_LaunchSide;
+                Shown_Dir = Net_LaunchDir;
+                Shown_Frame = Net_LaunchFrame;
+                Row_Key = [];
+                Row_Charging = [];
+                Row_BarWidth = [];
+
+                // Key 1 draws at the top, so the row that gets the topmost slot is only known
+                // once the visible rows have been counted. Counting them first keeps the block
+                // anchored at C_BaseY, where the weapon gauge expects it.
+                //
+                // Which legend lines are needed is settled in the same pass, one flag per frame in
+                // the frames' own order. The lines hang below C_BaseY rather than pushing the rows
+                // up, so that turning one on never moves the bars the player reads every lap. A key
+                // is only counted for it if it actually draws a direction — a purely vertical
+                // launch is the same in every frame, and a legend line explaining a symbol that is
+                // nowhere on screen explains nothing.
+                declare VisibleCount = 0;
+                declare Boolean[] LegendOn = [False, False, False];
+                foreach (Index => Frame_Count in Frame_Rows) {
+                    if (Net_LaunchBars.count <= Index || Net_LaunchBars[Index] <= 0) {
+                        continue;
+                    }
+                    VisibleCount += 1;
+                    if (Net_LaunchSide.count <= Index || Net_LaunchSide[Index] <= 0
+                        || Net_LaunchFrame.count <= Index) {
+                        continue;
+                    }
+                    declare KeyFrame = Net_LaunchFrame[Index];
+                    if (KeyFrame >= 0 && KeyFrame < C_FrameCount) {
+                        LegendOn[KeyFrame] = True;
+                    }
+                }
+
+                declare VisibleRows = 0;
+                foreach (Index => Frame_Row in Frame_Rows) {
+                    declare Bars = 0;
+                    if (Net_LaunchBars.count > Index) {
+                        Bars = Net_LaunchBars[Index];
+                    }
+
+                    if (Bars <= 0) {
+                        if (Frame_Row.Visible) {
+                            Frame_Row.Visible = False;
+                        }
+                        continue;
+                    }
+
+                    declare Filled = 0;
+                    if (Net_LaunchFilled.count > Index) {
+                        Filled = Net_LaunchFilled[Index];
+                    }
+
+                    // Granted keys fill the slots from the top down with no gaps, so a lone key 3
+                    // sits where key 1 would have been instead of floating over the middle of the
+                    // screen — the bottom row always sits on C_BaseY, whatever else is drawn.
+                    Frame_Row.Visible = True;
+                    Frame_Row.RelativePosition_V3.X = C_BaseX;
+                    Frame_Row.RelativePosition_V3.Y =
+                        C_BaseY + ML::ToReal(VisibleCount - 1 - VisibleRows) * C_RowHeight;
+                    VisibleRows += 1;
+
+                    // Constant strip width: the more charges a key holds, the thinner its bars
+                    declare BarWidth = (C_StripWidth - ML::ToReal(Bars - 1) * C_BarGap) / ML::ToReal(Bars);
+                    declare LeftX = -C_StripWidth / 2.;
+                    // The strip empties from the left, like the weapon gauge: what the player
+                    // still holds sits on the right, and the bar that is filling is the empty slot
+                    // immediately left of it. Everything is anchored by its right edge, so that
+                    // bar grows leftwards, away from the block it is about to join.
+                    declare FirstLit = Bars - Filled;
+                    declare Charging = -1;
+
+                    for (Bar, 0, C_BarMax - 1) {
+                        declare Flat = Index * C_BarMax + Bar;
+                        declare Quad_BarBg <=> Quads_BarBg[Flat];
+                        declare Quad_BarFill <=> Quads_BarFill[Flat];
+                        declare Quad_BarCore <=> Quads_BarCore[Flat];
+                        declare Quad_GlowOut <=> Quads_GlowOut[Flat];
+                        if (Quad_BarBg == Null || Quad_BarFill == Null || Quad_BarCore == Null
+                            || Quad_GlowOut == Null) {
+                            continue;
+                        }
+
+                        if (Bar >= Bars) {
+                            Quad_BarBg.Visible = False;
+                            Quad_BarFill.Visible = False;
+                            Quad_BarCore.Visible = False;
+                            Quad_GlowOut.Visible = False;
+                            continue;
+                        }
+
+                        declare BarRight = LeftX + ML::ToReal(Bar) * (BarWidth + C_BarGap) + BarWidth;
+                        Quad_BarBg.Visible = True;
+                        Quad_BarBg.RelativePosition_V3.X = BarRight;
+                        Quad_BarBg.Size = <BarWidth, C_BarHeight>;
+                        Quad_BarFill.RelativePosition_V3.X = BarRight;
+                        Quad_BarCore.RelativePosition_V3.X = BarRight - C_CoreInset;
+                        Quad_GlowOut.RelativePosition_V3.X = BarRight + C_GlowOutPad;
+
+                        if (Bar >= FirstLit) {
+                            Quad_BarFill.Visible = True;
+                            Quad_BarFill.Size = <BarWidth, C_BarHeight>;
+                            Quad_BarCore.Visible = True;
+                            Quad_BarCore.Size = <BarWidth - 2. * C_CoreInset, C_CoreHeight>;
+                            Quad_GlowOut.Visible = True;
+                            Quad_GlowOut.Size = <BarWidth + 2. * C_GlowOutPad, C_GlowOutHeight>;
+                        } else {
+                            // Empty, or the one filling — the pass below owns its width
+                            Quad_BarFill.Visible = False;
+                            Quad_BarCore.Visible = False;
+                            Quad_GlowOut.Visible = False;
+                            if (Bar == FirstLit - 1) {
+                                Charging = Flat;
+                            }
+                        }
+                    }
+
+                    // The strengths, in the order C_InfoItemNames lists them. A strength of
+                    // 0 draws nothing at all — the horizontal one because its direction means
+                    // nothing without a push behind it, the vertical ones because the usual key
+                    // only launches upward and a row of zeroes would be noise.
+                    declare Integer[] Strengths = [0, 0, 0];	// in C_InfoItemNames' order
+                    if (Net_LaunchUp.count > Index) Strengths[0] = Net_LaunchUp[Index];
+                    if (Net_LaunchDown.count > Index) Strengths[1] = Net_LaunchDown[Index];
+                    if (Net_LaunchSide.count > Index) Strengths[C_InfoItemSide] = Net_LaunchSide[Index];
+
+                    // How wide the items this row actually draws are, all told — one item on the
+                    // usual row, three on a key that pushes every way at once, and the horizontal
+                    // one wider than the other two because of the frame symbol it carries. The
+                    // block is laid out left of the strip and the loop below packs the drawn items
+                    // rightwards from ItemX, so this one value decides where the block starts.
+                    declare Real[] ItemWidths = [C_InfoItemWidth, C_InfoItemWidth, C_InfoSideWidth];
+                    declare BlockWidth = 0.;
+                    foreach (Slot => Strength in Strengths) {
+                        if (Strength > 0) {
+                            BlockWidth += ItemWidths[Slot];
+                        }
+                    }
+
+                    // Right-aligned against the strip: only the drawn items are counted, so the
+                    // block always ends at the strip's left edge and a lone up-arrow sits right
+                    // next to the bars it describes rather than adrift out to the left. What that
+                    // costs is a ragged left edge between rows of different widths — a row pushing
+                    // every way reaches further left than the usual one — which is the price of
+                    // every row's own arrows sitting where its bars are.
+                    declare ItemX = LeftX - C_InfoGap - BlockWidth;
+                    for (Item, 0, C_InfoItemCount - 1) {
+                        declare ItemFlat = Index * C_InfoItemCount + Item;
+                        declare Frame_Item <=> Frames_Item[ItemFlat];
+                        declare Label_Item <=> Labels_Item[ItemFlat];
+                        if (Frame_Item == Null || Label_Item == Null) {
+                            continue;
+                        }
+
+                        if (Strengths[Item] <= 0) {
+                            Frame_Item.Visible = False;
+                            continue;
+                        }
+                        Frame_Item.Visible = True;
+                        Frame_Item.RelativePosition_V3.X = ItemX;
+                        Label_Item.Value = ""^Strengths[Item];
+                        ItemX += ItemWidths[Item];
+                    }
+
+                    // What the horizontal push is aimed by, and where it goes. The direction digit
+                    // is the picker's own 0..7 in every frame, and the picker draws the same eight
+                    // arrows whichever frame is chosen: step 0 points up — straight ahead in the two
+                    // player-relative frames, north in the world one — and every step from there
+                    // turns it another 45 deg clockwise. The icon points up as it stands, so the
+                    // step is the whole of the turn, and what the arrow is measured against is left
+                    // to the symbol hung off it.
+                    declare KeyFrame = C_FrameWorld;
+                    if (Net_LaunchFrame.count > Index) {
+                        KeyFrame = Net_LaunchFrame[Index];
+                    }
+                    declare SideDir = 0;
+                    if (Net_LaunchDir.count > Index) {
+                        SideDir = Net_LaunchDir[Index];
+                    }
+
+                    declare Frame_RotSide <=> Frames_Rot[Index * C_InfoItemCount + C_InfoItemSide];
+                    if (Frame_RotSide != Null) {
+                        Frame_RotSide.RelativeRotation = ML::ToReal(SideDir) * 45.;
+                    }
+                    // One label for the two glyph frames, one quad for the styled one, so at most
+                    // one of the pair is ever up.
+                    declare Label_FrameSide <=> Labels_FrameSide[Index];
+                    if (Label_FrameSide != Null) {
+                        Label_FrameSide.Visible = KeyFrame != C_FrameMovement;
+                        if (KeyFrame == C_FrameWorld) {
+                            Label_FrameSide.Value = C_GlyphCompass;
+                            Label_FrameSide.TextColor = C_ColourWorld;
+                        } else if (KeyFrame == C_FrameOrientation) {
+                            Label_FrameSide.Value = C_GlyphCamera;
+                            Label_FrameSide.TextColor = C_ColourOrientation;
+                        }
+                    }
+                    declare Quad_FrameSide <=> Quads_FrameSide[Index];
+                    if (Quad_FrameSide != Null) {
+                        Quad_FrameSide.Visible = KeyFrame == C_FrameMovement;
+                    }
+
+                    Row_Key.add(Index);
+                    Row_Charging.add(Charging);
+                    Row_BarWidth.add(BarWidth);
+                }
+
+                // The legend hangs off the bottom of the block, the frames in their own order and
+                // packing with no gaps the way the rows above do — so a lone movement line sits
+                // directly under the bars rather than leaving a hole where the world and
+                // orientation lines would have been. Nothing above it moves.
+                //
+                // The names line up in a column: they are left-aligned, and the column starts as
+                // far left of the strip's edge as the widest name that is up needs, so whichever
+                // names those are the block still ends flush with the strengths above it. That
+                // width is measured rather than guessed at — and measured here, where the layout is
+                // being built anyway, rather than once at page init where the text may not have
+                // been laid out yet. This pass only runs when the mode publishes a different setup.
+                declare NameWidth = 0.;
+                foreach (Slot => On in LegendOn) {
+                    declare Label_Name <=> Labels_Legend[Slot];
+                    if (Label_Name == Null) {
+                        continue;
+                    }
+                    Label_Name.Visible = On;
+                    if (On) {
+                        declare Wide = Label_Name.ComputeWidth(Label_Name.Value);
+                        if (Wide > NameWidth) {
+                            NameWidth = Wide;
+                        }
+                    }
+                }
+                declare NameX = LegendRightX - NameWidth;
+
+                declare LegendY = C_BaseY + C_LegendOffsetY;
+                declare FirstLineY = LegendY;
+                declare AnyLegend = False;
+                foreach (Line => LineOn in LegendOn) {
+                    if (!LineOn) {
+                        continue;
+                    }
+                    declare Label_Line <=> Labels_Legend[Line];
+                    if (Label_Line == Null) {
+                        continue;
+                    }
+                    LegendY -= C_LegendHeight;
+                    Label_Line.RelativePosition_V3.X = NameX;
+                    Label_Line.RelativePosition_V3.Y = LegendY;
+                    if (!AnyLegend) {
+                        FirstLineY = LegendY;
+                        AnyLegend = True;
+                    }
+                }
+
+                // "Rel. to:" is written once, against the topmost line, and does for the ones under
+                // it. Right-aligning it into the gap left of the column is what saves measuring it:
+                // wherever the column starts, the prefix ends the same distance short of it.
+                if (Label_RelPrefix != Null) {
+                    Label_RelPrefix.Visible = AnyLegend;
+                    if (AnyLegend) {
+                        Label_RelPrefix.RelativePosition_V3.X = NameX - C_LegendGap;
+                        Label_RelPrefix.RelativePosition_V3.Y = FirstLineY;
+                    }
+                }
+            }
+
+            // Every frame, and only the bar that is filling. ArenaNow is the mode's own Now and
+            // the window it published holds for the whole charge, so the fill interpolates
+            // smoothly however rarely the mode republishes.
+            foreach (Slot => Flat in Row_Charging) {
+                if (Flat < 0) {
+                    continue;
+                }
+                declare KeyIndex = Row_Key[Slot];
+                declare PartFrom = 0;
+                declare PartTo = 0;
+                if (Net_LaunchPartFrom.count > KeyIndex) {
+                    PartFrom = Net_LaunchPartFrom[KeyIndex];
+                }
+                if (Net_LaunchPartTo.count > KeyIndex) {
+                    PartTo = Net_LaunchPartTo[KeyIndex];
+                }
+
+                // A PartFrom still in the future is the pause the gauge takes after a charge
+                // completes: the clamp leaves the bar sitting empty through it.
+                declare Ratio = 0.;
+                if (PartTo > PartFrom) {
+                    Ratio = Clamp01(ML::ToReal(ArenaNow - PartFrom) / ML::ToReal(PartTo - PartFrom));
+                }
+                declare FillWidth = Row_BarWidth[Slot] * Ratio;
+                declare Lit = FillWidth > 0.;
+
+                declare Quad_BarFill <=> Quads_BarFill[Flat];
+                if (Quad_BarFill != Null) {
+                    Quad_BarFill.Visible = Lit;
+                    Quad_BarFill.Size = <FillWidth, C_BarHeight>;
+                }
+                declare Quad_BarCore <=> Quads_BarCore[Flat];
+                if (Quad_BarCore != Null) {
+                    // The pale core stops short of the block's ends, so it only shows up once the
+                    // block is wide enough to have ends
+                    declare CoreWidth = FillWidth - 2. * C_CoreInset;
+                    if (CoreWidth < 0.) {
+                        CoreWidth = 0.;
+                    }
+                    Quad_BarCore.Visible = CoreWidth > 0.;
+                    Quad_BarCore.Size = <CoreWidth, C_CoreHeight>;
+                }
+                declare Quad_GlowOut <=> Quads_GlowOut[Flat];
+                if (Quad_GlowOut != Null) {
+                    Quad_GlowOut.Visible = Lit;
+                    Quad_GlowOut.Size = <FillWidth + 2. * C_GlowOutPad, C_GlowOutHeight>;
+                }
+            }
+        }
+    }
+--></script>
+</manialink>""";
+}

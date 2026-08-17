@@ -31,6 +31,7 @@
 #Include "Libs/smokegun/UI/NextMapVote.Script.txt" as NextMapVote
 #Include "Libs/smokegun/UI/RespawnBehavior.Script.txt" as RespawnBehavior
 #Include "Libs/smokegun/UI/SpecKeys.Script.txt" as SpecKeys
+#Include "Libs/smokegun/UI/LaunchKeys.Script.txt" as LaunchKeys
 #Include "Libs/smokegun/UI/SurvivalRanking.Script.txt" as SurvivalRanking
 
 #Include "Libs/smokegun/CPTimes.Script.txt" as CPTimes
@@ -583,10 +584,11 @@ foreach (Event in PendingEvents) {
                             // an older Gbx echoes that raw value. Masking here keeps the mode
                             // working with either build.
                             declare EchoedVariant = TL::ToInteger(Payload) % 65536;
-                            // Either encoding base: pads launch on the world-compass base, keys on
-                            // the aim-relative one, and both must disarm their slot on the echo.
+                            // Any encoding base: the world-compass one, the aim-relative one or the
+                            // movement-relative one. Pads and keys both pick freely between them,
+                            // and every one of them must disarm its slot on the echo.
                             if (EchoedVariant >= Constants::C_TrampolineVariantBase
-                                && EchoedVariant <= Constants::C_TrampolineVariantBaseRelative + Constants::C_TrampolineVariantPackedMax) {
+                                && EchoedVariant <= Constants::C_TrampolineVariantBaseMovement + Constants::C_TrampolineVariantPackedMax) {
                                 // Normal launch: disarm so the action can fire again next touch
                                 // or key press (pad slot and key slots share this bookkeeping)
                                 DisarmLaunch(Shooter);
@@ -682,21 +684,17 @@ foreach (Event in PendingEvents) {
 										declare Integer TrampolineUp for Event.Object = Constants::C_TrampolineDefaultUp;
 										declare Integer TrampolineDown for Event.Object = Constants::C_TrampolineDefaultDown;
 										declare Integer TrampolineCompass for Event.Object = Constants::C_TrampolineDefaultCompass;
+										declare Integer TrampolineFrame for Event.Object = Constants::C_TrampolineDefaultFrame;
 										declare Integer TrampolineHoriz for Event.Object = Constants::C_TrampolineDefaultHoriz;
 
 										// Policy: optionally suppress the down blast when an up blast fires too
-										declare LaunchDown = TrampolineDown;
-										if (!Constants::C_TrampolineAllowBothVertical && TrampolineUp > 0) {
-											LaunchDown = 0;
-										}
+										declare LaunchDown = LaunchDownStrength(TrampolineUp, TrampolineDown);
 
 										if (TrampolineUp > 0 || LaunchDown > 0 || TrampolineHoriz > 0) {
-											// Compass calibration: editor space (N..NW clockwise) -> action space
-											declare ActionCompass = LaunchActionCompass(TrampolineCompass);
-
-											// Encoding v2 (must match the action): base + up*1000 + down*100 + compass*10 + horiz
-											declare TrampolineVariant = Constants::C_TrampolineVariantBase
-												+ TrampolineUp * 1000 + LaunchDown * 100 + ActionCompass * 10 + TrampolineHoriz;
+											// Encoding and direction calibration both live in LaunchVariant, in the
+											// frame this pad picked (world compass, the player's aim, or their travel)
+											declare TrampolineVariant = LaunchVariant(TrampolineFrame,
+												TrampolineUp, TrampolineDown, TrampolineCompass, TrampolineHoriz);
 											declare Integer TrampolineCooldown for Event.Object = Constants::C_TrampolineDefaultCooldown;
 											TrampolineCooldownEnd = Now + TrampolineCooldown;
 											// Slot index 0 = the pad slot; opens the PvP window and arms the action
@@ -874,12 +872,16 @@ foreach (Player in Players) {
             declare Integer TrampolineSpawnStart for Player = -1;
             declare Ident LaunchSection for Player = NullId;
             declare Boolean LaunchNeedsRefresh for Player = True;
+            // Spawning and capturing a checkpoint both refresh the section, but only a spawn
+            // refills the charges (see LoadLaunchConfig)
+            declare SpawnEdge = False;
             if (Player.StartTime != TrampolineSpawnStart) {
                 TrampolineSpawnStart = Player.StartTime;
                 // Replaces the pad slot and forgets the bindings the spawn destroyed;
                 // the section refresh just below rebinds what this section grants.
                 LoadLaunchActions(Player);
                 LaunchNeedsRefresh = True;
+                SpawnEdge = True;
             }
 
             // Launch abilities are granted per section: re-read them whenever the governing
@@ -888,9 +890,11 @@ foreach (Player in Players) {
             if (LaunchNeedsRefresh || LaunchSection != Player::GetSectionAnchor(Player)) {
                 LaunchNeedsRefresh = False;
                 LaunchSection = Player::GetSectionAnchor(Player);
-                LoadLaunchConfig(Player);
+                LoadLaunchConfig(Player, SpawnEdge);
                 ApplyLaunchBinds(Player);
             }
+
+            TickLaunchKeys(Player);
 
             if (UsePvPWeapons != G_LastUsePvPWeapons) {
                 if (UsePvPWeapons)
@@ -1091,30 +1095,337 @@ Integer LaunchRelativeSteps(Integer _EditorDir) {
     return _EditorDir % 8;
 }
 
-// Read the launch settings off the landmark governing the player's current section — the
-// last checkpoint they captured, or the spawn before the first one. No landmark (spectator,
-// pre-spawn, legacy map without the metadata) leaves every key ungranted.
-Void LoadLaunchConfig(CSmPlayer _Player) {
+// The variant base that makes the action read the dir digit in the frame the mapper picked.
+// Anything unrecognised falls back to the world frame, which is what a pad without the
+// metadata has always meant.
+Integer LaunchFrameBase(Integer _Frame) {
+    if (_Frame == Constants::C_LaunchFrameOrientation) {
+        return Constants::C_TrampolineVariantBaseRelative;
+    }
+    if (_Frame == Constants::C_LaunchFrameMovement) {
+        return Constants::C_TrampolineVariantBaseMovement;
+    }
+    return Constants::C_TrampolineVariantBase;
+}
+
+// Editor direction index -> the 45 deg steps the action applies, in that frame's rotation
+// sense. The world frame turns around +Z and carries the compass calibration; the two
+// player frames turn around the player with one shared sense (see C_LaunchRelativeMirror).
+Integer LaunchFrameSteps(Integer _Frame, Integer _EditorDir) {
+    if (_Frame == Constants::C_LaunchFrameOrientation || _Frame == Constants::C_LaunchFrameMovement) {
+        return LaunchRelativeSteps(_EditorDir);
+    }
+    return LaunchActionCompass(_EditorDir);
+}
+
+// One slot per launch key, for the per-player arrays. The count is C_LaunchKeyCount's to
+// state, so nothing below has to spell out how many keys there are.
+Integer[] ZeroSlots() {
+    declare Integer[] Slots = [];
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        Slots.add(0);
+    }
+    return Slots;
+}
+
+Boolean[] FalseSlots() {
+    declare Boolean[] Slots = [];
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        Slots.add(False);
+    }
+    return Slots;
+}
+
+// The both-vertical policy, in one place: C_TrampolineAllowBothVertical False means an up blast
+// suppresses the down one. Everything that fires a launch — and the HUD that describes one —
+// asks here, so the strip can never advertise a blast the launcher drops.
+Integer LaunchDownStrength(Integer _Up, Integer _Down) {
+    if (!Constants::C_TrampolineAllowBothVertical && _Up > 0) {
+        return 0;
+    }
+    return _Down;
+}
+
+// The whole of encoding v4 (must match the action): the base names the frame the dir digit is
+// measured in — a world compass direction, a 45 deg step from where the player looks, or one from
+// where they are travelling — over base + up*1000 + down*100 + dir*10 + horiz.
+Integer LaunchVariant(Integer _Frame, Integer _Up, Integer _Down, Integer _Dir, Integer _Horiz) {
+    return LaunchFrameBase(_Frame)
+        + _Up * 1000 + LaunchDownStrength(_Up, _Down) * 100 + LaunchFrameSteps(_Frame, _Dir) * 10 + _Horiz;
+}
+
+// ms one charge takes to come back at _GainPercent (100 % = C_LaunchChargeBaseMs). 0 = never.
+Integer LaunchChargeMs(Integer _GainPercent) {
+    if (_GainPercent <= 0) {
+        return 0;
+    }
+    declare ChargeMs = Constants::C_LaunchChargeBaseMs * 100 / _GainPercent;
+    if (ChargeMs < 1) {
+        return 1;
+    }
+    return ChargeMs;
+}
+
+// The pause the gauge takes before an emptied slot starts refilling, plus the fill itself. Every
+// deadline is armed with this, whichever way the slot came to be empty — a charge completing, a
+// shot spending one, or a section handing the player a part-spent key — because the native gauge
+// always holds first and a slot that skipped the hold would come back faster than its neighbours.
+// The HUD subtracts LaunchChargeMs back off to find where the fill starts, which leaves the pause
+// as a window the bar sits empty through.
+Integer LaunchCycleMs(Integer _GainPercent) {
+    declare ChargeMs = LaunchChargeMs(_GainPercent);
+    if (ChargeMs <= 0) {
+        return 0;
+    }
+    return ChargeMs + ChargeMs * Constants::C_LaunchChargeDelayPercent / 100;
+}
+
+// How many charges the player enters a section with, in the order the weapon rules apply: carry
+// what was left over, start full on a key this section is the first to grant (and on a respawn,
+// where weapon ammo is refilled too), then let the mapper's Refill / Empty override. Called by
+// LoadLaunchConfig once the section's own settings are in place, with what the previous section
+// had.
+Void InitLaunchCharges(CSmPlayer _Player, Boolean[] _PreviousOn, Integer[] _PreviousCharges, Boolean _Respawned) {
+    declare Integer[] LaunchAmount for _Player = [];
+    declare Boolean[] LaunchRefill for _Player = [];
+    declare Boolean[] LaunchEmpty for _Player = [];
+    declare Integer[] LaunchCharges for _Player = [];
+
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        declare Index = Key - 1;
+        declare Max = LaunchAmount[Index];
+
+        declare Charges = 0;
+        if (_PreviousCharges.count > Index) {
+            Charges = _PreviousCharges[Index];
+        }
+        declare WasGranted = _PreviousOn.count > Index && _PreviousOn[Index];
+        if (!WasGranted || (_Respawned && S_FullAmmoSpawn)) {
+            Charges = Max;
+        }
+        if (LaunchRefill[Index]) {
+            Charges = Max;
+        }
+        if (LaunchEmpty[Index]) {
+            Charges = 0;
+        }
+
+        LaunchCharges[Index] = ML::Clamp(Charges, 0, Max);
+    }
+}
+
+// Hand the LaunchKeys layer everything it draws and nothing it would have to interpret: bars per
+// key, how many of them are lit, the window the bar that is currently filling spans, and what a
+// press of that key actually does. The engine draws the weapon's own gauge from
+// CurAmmo/CurAmmoMax; an action has no engine ammo behind it, so the same picture has to be
+// published by hand.
+//
+// Times are the mode's Now, which the client reads back as ArenaNow (the pairing the item-buff
+// gauges in Items.Script.txt already rely on).
+// The half of that picture which only moves when the player enters a section configuring the keys
+// differently: what one press is made of, for the strip's second line. Published from
+// LoadLaunchConfig, where these values are read and clamped, rather than rebuilt per tick.
+Void PublishLaunchConfig(CSmPlayer _Player) {
     declare Boolean[] LaunchOn for _Player = [];
     declare Integer[] LaunchUp for _Player = [];
     declare Integer[] LaunchDown for _Player = [];
     declare Integer[] LaunchSide for _Player = [];
     declare Integer[] LaunchDir for _Player = [];
+    declare Integer[] LaunchFrame for _Player = [];
+
+    declare netwrite Integer[] Net_LaunchUp for _Player = [];
+    declare netwrite Integer[] Net_LaunchDown for _Player = [];
+    declare netwrite Integer[] Net_LaunchSide for _Player = [];
+    declare netwrite Integer[] Net_LaunchDir for _Player = [];
+    declare netwrite Integer[] Net_LaunchFrame for _Player = [];
+
+    // Same 0..9 digits the editor takes and the action's variant carries, under the editor's own
+    // names for them. An ungranted key stays at zero, which draws nothing.
+    declare Upward = ZeroSlots();
+    declare Downward = ZeroSlots();
+    declare Horizontal = ZeroSlots();
+    declare Direction = ZeroSlots();
+    // What that direction is measured against (C_LaunchFrame*). The strip draws the same arrow
+    // whichever frame it is, and hangs a symbol off it saying what the arrow is measured against —
+    // so the frame has to travel alongside the direction. C_LaunchFrameWorld is the zero.
+    declare Frame = ZeroSlots();
+
+    if (LaunchOn.count >= Constants::C_LaunchKeyCount) {
+        for (Key, 1, Constants::C_LaunchKeyCount) {
+            declare Index = Key - 1;
+            if (!LaunchOn[Index]) {
+                continue;
+            }
+
+            Upward[Index] = LaunchUp[Index];
+            // The same suppression TryLaunchOnKey applies before it arms the slot, so the strip
+            // never advertises a down blast that will not fire.
+            Downward[Index] = LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
+            Horizontal[Index] = LaunchSide[Index];
+            // The direction as the editor's arrow picker showed it, not the steps the action is
+            // armed with: LaunchRelativeSteps only applies C_LaunchRelativeMirror, the calibration
+            // that makes the launch come out the way the picker drew it.
+            Direction[Index] = LaunchDir[Index];
+            if (LaunchFrame.count > Index) {
+                Frame[Index] = LaunchFrame[Index];
+            }
+        }
+    }
+
+    Net_LaunchUp = Upward;
+    Net_LaunchDown = Downward;
+    Net_LaunchSide = Horizontal;
+    Net_LaunchDir = Direction;
+    Net_LaunchFrame = Frame;
+}
+
+// The half that moves as the player plays: how many bars are lit and the window the bar that is
+// currently filling spans.
+Void PublishLaunchHud(CSmPlayer _Player) {
+    declare Boolean[] LaunchOn for _Player = [];
+    declare Integer[] LaunchAmount for _Player = [];
+    declare Integer[] LaunchGain for _Player = [];
+    declare Integer[] LaunchCharges for _Player = [];
+    declare Integer[] LaunchChargeAt for _Player = [];
+    declare Integer[] LaunchReadyAt for _Player = [];
+    declare Integer[] LaunchCooldown for _Player = [];
+
+    declare netwrite Integer[] Net_LaunchBars for _Player = [];
+    declare netwrite Integer[] Net_LaunchFilled for _Player = [];
+    declare netwrite Integer[] Net_LaunchPartFrom for _Player = [];
+    declare netwrite Integer[] Net_LaunchPartTo for _Player = [];
+
+    // Bars 0 = no row for that key, which is also what an unconfigured player gets
+    declare Bars = ZeroSlots();
+    declare Filled = ZeroSlots();
+    declare PartFrom = ZeroSlots();
+    declare PartTo = ZeroSlots();
+
+    if (LaunchOn.count >= Constants::C_LaunchKeyCount
+        && LaunchCharges.count >= Constants::C_LaunchKeyCount) {
+        for (Key, 1, Constants::C_LaunchKeyCount) {
+            declare Index = Key - 1;
+            if (!LaunchOn[Index]) {
+                continue;
+            }
+
+            if (LaunchAmount[Index] > 0) {
+                Bars[Index] = LaunchAmount[Index];
+                Filled[Index] = LaunchCharges[Index];
+                if (LaunchChargeAt[Index] > 0) {
+                    // Only the fill part of the cycle: after a charge completes, the deadline
+                    // minus the fill time lands past the pause, so while the pause runs PartFrom
+                    // is still in the future and the layer's clamp leaves the bar sitting empty.
+                    PartFrom[Index] = LaunchChargeAt[Index] - LaunchChargeMs(LaunchGain[Index]);
+                    PartTo[Index] = LaunchChargeAt[Index];
+                }
+            } else {
+                // Unlimited: a single bar that empties on the press and fills over the cooldown,
+                // so the key still reports when it is ready again. The press that started it is
+                // LaunchReadyAt less the cooldown it was stamped with.
+                Bars[Index] = 1;
+                if (Now >= LaunchReadyAt[Index]) {
+                    Filled[Index] = 1;
+                } else {
+                    PartFrom[Index] = LaunchReadyAt[Index] - LaunchCooldown[Index];
+                    PartTo[Index] = LaunchReadyAt[Index];
+                }
+            }
+        }
+    }
+
+    // Only reassign what changed: these run every tick for every player holding a launch key, and
+    // an untouched netwrite costs nothing.
+    if (!Tools::SameInts(Net_LaunchBars, Bars)) {
+        Net_LaunchBars = Bars;
+    }
+    if (!Tools::SameInts(Net_LaunchFilled, Filled)) {
+        Net_LaunchFilled = Filled;
+    }
+    if (!Tools::SameInts(Net_LaunchPartFrom, PartFrom)) {
+        Net_LaunchPartFrom = PartFrom;
+    }
+    if (!Tools::SameInts(Net_LaunchPartTo, PartTo)) {
+        Net_LaunchPartTo = PartTo;
+    }
+}
+
+// Read the launch settings off the landmark governing the player's current section — the
+// last checkpoint they captured, or the spawn before the first one. No landmark (spectator,
+// pre-spawn, legacy map without the metadata) leaves every key ungranted.
+//
+// _Respawned tells the two ways into a section apart: capturing a checkpoint carries the
+// charges over (weapon ammo does the same), while respawning tops them back up, the way
+// S_FullAmmoSpawn refills weapon ammo on every respawn.
+// Every launch array back to "nothing granted", so a section only has to write what it grants.
+// Split out of LoadLaunchConfig because the two together exceed the linter's statement cap.
+Void ResetLaunchConfig(CSmPlayer _Player) {
+    declare Boolean[] LaunchOn for _Player = [];
+    declare Integer[] LaunchUp for _Player = [];
+    declare Integer[] LaunchDown for _Player = [];
+    declare Integer[] LaunchSide for _Player = [];
+    declare Integer[] LaunchDir for _Player = [];
+    declare Integer[] LaunchFrame for _Player = [];
     declare Integer[] LaunchCooldown for _Player = [];
     declare Boolean[] LaunchGround for _Player = [];
     declare Integer[] LaunchReadyAt for _Player = [];
+    declare Integer[] LaunchAmount for _Player = [];
+    declare Integer[] LaunchGain for _Player = [];
+    declare Boolean[] LaunchRefill for _Player = [];
+    declare Boolean[] LaunchEmpty for _Player = [];
+    declare Integer[] LaunchCharges for _Player = [];
+    declare Integer[] LaunchChargeAt for _Player = [];
+    // Whether anything below can draw or fire. Cleared here so LoadLaunchConfig's no-landmark
+    // exit leaves it False, which is what stops the per-tick work for spectators and legacy maps.
+    declare Boolean LaunchAnyOn for _Player = False;
 
-    LaunchOn = [False, False, False, False];
-    LaunchUp = [0, 0, 0, 0];
-    LaunchDown = [0, 0, 0, 0];
-    LaunchSide = [0, 0, 0, 0];
-    LaunchDir = [0, 0, 0, 0];
-    LaunchCooldown = [0, 0, 0, 0];
-    LaunchGround = [False, False, False, False];
-    LaunchReadyAt = [0, 0, 0, 0];
+    LaunchOn = FalseSlots();
+    LaunchUp = ZeroSlots();
+    LaunchDown = ZeroSlots();
+    LaunchSide = ZeroSlots();
+    LaunchDir = ZeroSlots();
+    LaunchFrame = ZeroSlots();
+    LaunchCooldown = ZeroSlots();
+    LaunchGround = FalseSlots();
+    LaunchReadyAt = ZeroSlots();
+    LaunchAmount = ZeroSlots();
+    LaunchGain = ZeroSlots();
+    LaunchRefill = FalseSlots();
+    LaunchEmpty = FalseSlots();
+    LaunchCharges = ZeroSlots();
+    LaunchChargeAt = ZeroSlots();
+    LaunchAnyOn = False;
+}
+
+Void LoadLaunchConfig(CSmPlayer _Player, Boolean _Respawned) {
+    declare Boolean[] LaunchOn for _Player = [];
+    declare Integer[] LaunchUp for _Player = [];
+    declare Integer[] LaunchDown for _Player = [];
+    declare Integer[] LaunchSide for _Player = [];
+    declare Integer[] LaunchDir for _Player = [];
+    declare Integer[] LaunchFrame for _Player = [];
+    declare Integer[] LaunchCooldown for _Player = [];
+    declare Boolean[] LaunchGround for _Player = [];
+    declare Integer[] LaunchAmount for _Player = [];
+    declare Integer[] LaunchGain for _Player = [];
+    declare Boolean[] LaunchRefill for _Player = [];
+    declare Boolean[] LaunchEmpty for _Player = [];
+    declare Integer[] LaunchCharges for _Player = [];
+    declare Boolean LaunchAnyOn for _Player = False;
+
+    // What the section being left had: the carry-over rule needs both, and the arrays are about
+    // to be overwritten.
+    declare PreviousOn = LaunchOn;
+    declare PreviousCharges = LaunchCharges;
+
+    ResetLaunchConfig(_Player);
 
     declare Section = Player::GetSectionAnchor(_Player);
     if (!MapLandmarks.existskey(Section)) {
+        // Nothing granted: publish the zeroes once so a strip left over from the previous
+        // section goes away, rather than leaving the last setup on screen.
+        PublishLaunchConfig(_Player);
+        PublishLaunchHud(_Player);
         return;
     }
     declare Anchor <=> MapLandmarks[Section];
@@ -1124,32 +1435,52 @@ Void LoadLaunchConfig(CSmPlayer _Player) {
     declare metadata Meta_Launch1_Down for Anchor = Constants::C_LaunchDefaultDown;
     declare metadata Meta_Launch1_Side for Anchor = Constants::C_LaunchDefaultSide;
     declare metadata Meta_Launch1_Dir for Anchor = Constants::C_LaunchDefaultDir;
+    declare metadata Meta_Launch1_Frame for Anchor = Constants::C_LaunchDefaultFrame;
     declare metadata Meta_Launch1_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
     declare metadata Meta_Launch1_Ground for Anchor = Constants::C_LaunchDefaultGround;
+    declare metadata Meta_Launch1_Amount for Anchor = Constants::C_LaunchDefaultAmount;
+    declare metadata Meta_Launch1_Gain for Anchor = Constants::C_LaunchDefaultGain;
+    declare metadata Meta_Launch1_Refill for Anchor = Constants::C_LaunchDefaultRefill;
+    declare metadata Meta_Launch1_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
 
     declare metadata Meta_Launch2_On for Anchor = Constants::C_LaunchDefaultOn;
     declare metadata Meta_Launch2_Up for Anchor = Constants::C_LaunchDefaultUp;
     declare metadata Meta_Launch2_Down for Anchor = Constants::C_LaunchDefaultDown;
     declare metadata Meta_Launch2_Side for Anchor = Constants::C_LaunchDefaultSide;
     declare metadata Meta_Launch2_Dir for Anchor = Constants::C_LaunchDefaultDir;
+    declare metadata Meta_Launch2_Frame for Anchor = Constants::C_LaunchDefaultFrame;
     declare metadata Meta_Launch2_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
     declare metadata Meta_Launch2_Ground for Anchor = Constants::C_LaunchDefaultGround;
+    declare metadata Meta_Launch2_Amount for Anchor = Constants::C_LaunchDefaultAmount;
+    declare metadata Meta_Launch2_Gain for Anchor = Constants::C_LaunchDefaultGain;
+    declare metadata Meta_Launch2_Refill for Anchor = Constants::C_LaunchDefaultRefill;
+    declare metadata Meta_Launch2_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
 
     declare metadata Meta_Launch3_On for Anchor = Constants::C_LaunchDefaultOn;
     declare metadata Meta_Launch3_Up for Anchor = Constants::C_LaunchDefaultUp;
     declare metadata Meta_Launch3_Down for Anchor = Constants::C_LaunchDefaultDown;
     declare metadata Meta_Launch3_Side for Anchor = Constants::C_LaunchDefaultSide;
     declare metadata Meta_Launch3_Dir for Anchor = Constants::C_LaunchDefaultDir;
+    declare metadata Meta_Launch3_Frame for Anchor = Constants::C_LaunchDefaultFrame;
     declare metadata Meta_Launch3_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
     declare metadata Meta_Launch3_Ground for Anchor = Constants::C_LaunchDefaultGround;
+    declare metadata Meta_Launch3_Amount for Anchor = Constants::C_LaunchDefaultAmount;
+    declare metadata Meta_Launch3_Gain for Anchor = Constants::C_LaunchDefaultGain;
+    declare metadata Meta_Launch3_Refill for Anchor = Constants::C_LaunchDefaultRefill;
+    declare metadata Meta_Launch3_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
 
     declare metadata Meta_Launch4_On for Anchor = Constants::C_LaunchDefaultOn;
     declare metadata Meta_Launch4_Up for Anchor = Constants::C_LaunchDefaultUp;
     declare metadata Meta_Launch4_Down for Anchor = Constants::C_LaunchDefaultDown;
     declare metadata Meta_Launch4_Side for Anchor = Constants::C_LaunchDefaultSide;
     declare metadata Meta_Launch4_Dir for Anchor = Constants::C_LaunchDefaultDir;
+    declare metadata Meta_Launch4_Frame for Anchor = Constants::C_LaunchDefaultFrame;
     declare metadata Meta_Launch4_Cooldown for Anchor = Constants::C_LaunchDefaultCooldown;
     declare metadata Meta_Launch4_Ground for Anchor = Constants::C_LaunchDefaultGround;
+    declare metadata Meta_Launch4_Amount for Anchor = Constants::C_LaunchDefaultAmount;
+    declare metadata Meta_Launch4_Gain for Anchor = Constants::C_LaunchDefaultGain;
+    declare metadata Meta_Launch4_Refill for Anchor = Constants::C_LaunchDefaultRefill;
+    declare metadata Meta_Launch4_Empty for Anchor = Constants::C_LaunchDefaultEmpty;
 
     LaunchOn = [Meta_Launch1_On, Meta_Launch2_On, Meta_Launch3_On, Meta_Launch4_On];
     LaunchUp = [
@@ -1168,6 +1499,12 @@ Void LoadLaunchConfig(CSmPlayer _Player) {
         ML::Clamp(Meta_Launch1_Dir, 0, 7), ML::Clamp(Meta_Launch2_Dir, 0, 7),
         ML::Clamp(Meta_Launch3_Dir, 0, 7), ML::Clamp(Meta_Launch4_Dir, 0, 7)
     ];
+    LaunchFrame = [
+        ML::Clamp(Meta_Launch1_Frame, 0, Constants::C_LaunchFrameMax),
+        ML::Clamp(Meta_Launch2_Frame, 0, Constants::C_LaunchFrameMax),
+        ML::Clamp(Meta_Launch3_Frame, 0, Constants::C_LaunchFrameMax),
+        ML::Clamp(Meta_Launch4_Frame, 0, Constants::C_LaunchFrameMax)
+    ];
     LaunchCooldown = [
         ML::Clamp(Meta_Launch1_Cooldown, 0, Constants::C_LaunchCooldownMax),
         ML::Clamp(Meta_Launch2_Cooldown, 0, Constants::C_LaunchCooldownMax),
@@ -1175,6 +1512,87 @@ Void LoadLaunchConfig(CSmPlayer _Player) {
         ML::Clamp(Meta_Launch4_Cooldown, 0, Constants::C_LaunchCooldownMax)
     ];
     LaunchGround = [Meta_Launch1_Ground, Meta_Launch2_Ground, Meta_Launch3_Ground, Meta_Launch4_Ground];
+    LaunchAmount = [
+        ML::Clamp(Meta_Launch1_Amount, 0, Constants::C_LaunchAmountMax),
+        ML::Clamp(Meta_Launch2_Amount, 0, Constants::C_LaunchAmountMax),
+        ML::Clamp(Meta_Launch3_Amount, 0, Constants::C_LaunchAmountMax),
+        ML::Clamp(Meta_Launch4_Amount, 0, Constants::C_LaunchAmountMax)
+    ];
+    LaunchGain = [
+        ML::Clamp(Meta_Launch1_Gain, 0, Constants::C_LaunchGainMax),
+        ML::Clamp(Meta_Launch2_Gain, 0, Constants::C_LaunchGainMax),
+        ML::Clamp(Meta_Launch3_Gain, 0, Constants::C_LaunchGainMax),
+        ML::Clamp(Meta_Launch4_Gain, 0, Constants::C_LaunchGainMax)
+    ];
+    LaunchRefill = [Meta_Launch1_Refill, Meta_Launch2_Refill, Meta_Launch3_Refill, Meta_Launch4_Refill];
+    LaunchEmpty = [Meta_Launch1_Empty, Meta_Launch2_Empty, Meta_Launch3_Empty, Meta_Launch4_Empty];
+
+    InitLaunchCharges(_Player, PreviousOn, PreviousCharges, _Respawned);
+
+    // What the per-tick work is gated on: a section granting no key at all costs nothing per tick
+    foreach (Granted in LaunchOn) {
+        if (Granted) {
+            LaunchAnyOn = True;
+        }
+    }
+
+    // The strip's static half is settled now and cannot change again until the next section, so
+    // publish it here rather than rebuilding it every tick. The charge half follows so a section
+    // that revokes every key clears the bars on the same pass.
+    PublishLaunchConfig(_Player);
+    PublishLaunchHud(_Player);
+}
+
+// Refill the charges a player has spent, one key at a time. The charge in progress is a deadline
+// rather than an accumulator, so nothing drifts when the tick rate wobbles and the HUD can draw
+// the partial bar from the same two numbers.
+Void TickLaunchCharges(CSmPlayer _Player) {
+    declare Boolean[] LaunchOn for _Player = [];
+    declare Integer[] LaunchAmount for _Player = [];
+    declare Integer[] LaunchGain for _Player = [];
+    declare Integer[] LaunchCharges for _Player = [];
+    declare Integer[] LaunchChargeAt for _Player = [];
+    if (LaunchOn.count < Constants::C_LaunchKeyCount || LaunchCharges.count < Constants::C_LaunchKeyCount) {
+        return;
+    }
+
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        declare Index = Key - 1;
+        // Ungranted, unlimited (Amount 0), gain 0 or already full: nothing is charging
+        declare Charging = LaunchOn[Index] && LaunchAmount[Index] > 0 && LaunchGain[Index] > 0
+            && LaunchCharges[Index] < LaunchAmount[Index];
+        if (!Charging) {
+            LaunchChargeAt[Index] = 0;
+            continue;
+        }
+
+        if (LaunchChargeAt[Index] <= 0) {
+            // Idle with room to fill and no deadline running: a section handed the player a
+            // part-spent key. Same full cycle as everywhere else, so entering a section is not a
+            // way to skip the hold.
+            LaunchChargeAt[Index] = Now + LaunchCycleMs(LaunchGain[Index]);
+        } else if (Now >= LaunchChargeAt[Index]) {
+            LaunchCharges[Index] += 1;
+            if (LaunchCharges[Index] < LaunchAmount[Index]) {
+                // A charge did just complete: the gauge holds before the next one starts
+                LaunchChargeAt[Index] = Now + LaunchCycleMs(LaunchGain[Index]);
+            } else {
+                LaunchChargeAt[Index] = 0;
+            }
+        }
+    }
+}
+
+// Per-tick upkeep for one player's launch keys, and the gate in front of it: a section granting
+// no key at all costs nothing here. LoadLaunchConfig has already published the zeroes for those
+// players, so there is nothing left to keep up to date.
+Void TickLaunchKeys(CSmPlayer _Player) {
+    declare Boolean LaunchAnyOn for _Player = False;
+    if (!LaunchAnyOn) {
+        return;
+    }
+    TickLaunchCharges(_Player);
+    PublishLaunchHud(_Player);
 }
 
 // Bound key = granted ability. Unbinding is what revokes it at the next checkpoint.
@@ -1277,9 +1695,14 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
     declare Integer[] LaunchDown for _Player = [];
     declare Integer[] LaunchSide for _Player = [];
     declare Integer[] LaunchDir for _Player = [];
+    declare Integer[] LaunchFrame for _Player = [];
     declare Integer[] LaunchCooldown for _Player = [];
     declare Boolean[] LaunchGround for _Player = [];
     declare Integer[] LaunchReadyAt for _Player = [];
+    declare Integer[] LaunchAmount for _Player = [];
+    declare Integer[] LaunchGain for _Player = [];
+    declare Integer[] LaunchCharges for _Player = [];
+    declare Integer[] LaunchChargeAt for _Player = [];
     declare Index = _Key - 1;
 
     if (LaunchGround[Index] && !_Player.IsTouchingGround) {
@@ -1290,27 +1713,38 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
     }
 
     // Policy: optionally suppress the down blast when an up blast fires too
-    declare LaunchDownStrength = LaunchDown[Index];
-    if (!Constants::C_TrampolineAllowBothVertical && LaunchUp[Index] > 0) {
-        LaunchDownStrength = 0;
-    }
-    if (LaunchUp[Index] <= 0 && LaunchDownStrength <= 0 && LaunchSide[Index] <= 0) {
+    declare DownStrength = LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
+    if (LaunchUp[Index] <= 0 && DownStrength <= 0 && LaunchSide[Index] <= 0) {
         return;
     }
 
-    // Encoding v3 (must match the action): the relative base makes the dir digit a 45 deg
-    // step from the player's own aim instead of a world compass direction, so the launch
-    // follows wherever they look. base + up*1000 + down*100 + dir*10 + side
-    declare Steps = LaunchRelativeSteps(LaunchDir[Index]);
-    declare LaunchVariant = Constants::C_TrampolineVariantBaseRelative
-        + LaunchUp[Index] * 1000 + LaunchDownStrength * 100 + Steps * 10 + LaunchSide[Index];
+    // Charges, once every gate a launch could still fail on has passed — a key configured to do
+    // nothing must not eat one. Amount 0 is unlimited, so it only stamps the cooldown below.
+    if (LaunchAmount[Index] > 0) {
+        if (LaunchCharges[Index] <= 0) {
+            return;
+        }
+        LaunchCharges[Index] -= 1;
+        // Open a cycle on the slot this shot just emptied when the key was full, and leave a
+        // charge that is already part-way there alone: firing costs a charge, never the progress
+        // towards one. The full cycle, hold included — the slot a shot empties comes back exactly
+        // as fast as one the gauge emptied itself, so the first shot off a full gauge is not
+        // quietly cheaper than the ones after it.
+        if (LaunchChargeAt[Index] <= 0 && LaunchGain[Index] > 0) {
+            LaunchChargeAt[Index] = Now + LaunchCycleMs(LaunchGain[Index]);
+        }
+    }
+
+    // Encoding v4 and the frame's own direction calibration, both in LaunchVariant
+    declare ArmedVariant = LaunchVariant(LaunchFrame[Index],
+        LaunchUp[Index], LaunchDown[Index], LaunchDir[Index], LaunchSide[Index]);
     // Fire through the pad slot by default (see C_LaunchFireOnPadSlot): a key launch is the
     // same launch a pad fires, so the key slots only need to carry the bind.
     declare FireSlot = _Key;
     if (Constants::C_LaunchFireOnPadSlot) {
         FireSlot = 0;
     }
-    ArmLaunch(_Player, FireSlot, LaunchVariant);
+    ArmLaunch(_Player, FireSlot, ArmedVariant);
     LaunchReadyAt[Index] = Now + LaunchCooldown[Index];
 }
 
@@ -1343,6 +1777,7 @@ Void CreateUI(Boolean _Replace) {
     Layers::Create("UpdatePlayer", UpdatePlayer::GetLayer());
 
     Layers::Create("Items", Items::CreateLayerItems());
+    Layers::Create("LaunchKeys", LaunchKeys::GetLayer());
 
     if (Settings::GetEnableRecords()) {
         Layers::Create("PlayerFinished", PlayerFinished::GetLayer());
@@ -1361,6 +1796,7 @@ Void CreateUI(Boolean _Replace) {
     Layers::Attach("CPTimes");
     //Layers::Attach("KeysSettings");
     Layers::Attach("Items");
+    Layers::Attach("LaunchKeys");
     Layers::Attach("SpecKeys");
     Layers::Attach("AntiDevMode");
 
@@ -1403,6 +1839,7 @@ Void DestroyUI(Boolean _Hard) {
     Layers::Detach("CPTimes");
     //Layers::Detach("KeysSettings");
     Layers::Detach("Items");
+    Layers::Detach("LaunchKeys");
     Layers::Detach("Records");
 
     Layers::Detach("SpectatorCount");

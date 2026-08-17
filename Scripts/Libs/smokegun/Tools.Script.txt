@@ -126,6 +126,19 @@ Integer[] FindMissingNumbers(Integer[Integer] CPCounts) {
     return MissingNumbers;
 }
 
+/// Element-wise comparison; a length mismatch is a difference.
+Boolean SameInts(Integer[] _Left, Integer[] _Right) {
+    if (_Left.count != _Right.count) {
+        return False;
+    }
+    foreach (Index => Value in _Left) {
+        if (_Right[Index] != Value) {
+            return False;
+        }
+    }
+    return True;
+}
+
 Integer GetWeaponTypeFromSpawn(CSmMapLandmark SpawnLandmark) {
     declare WeaponType = 0;
     declare SpawnName = SpawnLandmark.Tag;

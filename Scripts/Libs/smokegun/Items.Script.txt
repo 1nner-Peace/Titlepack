@@ -90,6 +90,7 @@ Void Place() {
             declare metadata Meta_TrampolineUp for AnchorLandmark = Constants::C_TrampolineDefaultUp;
             declare metadata Meta_TrampolineDown for AnchorLandmark = Constants::C_TrampolineDefaultDown;
             declare metadata Meta_TrampolineCompass for AnchorLandmark = Constants::C_TrampolineDefaultCompass;
+            declare metadata Meta_TrampolineFrame for AnchorLandmark = Constants::C_TrampolineDefaultFrame;
             declare metadata Meta_TrampolineHoriz for AnchorLandmark = Constants::C_TrampolineDefaultHoriz;
             declare metadata Meta_TrampolineWaitGround for AnchorLandmark = Constants::C_TrampolineDefaultWaitGround;
             declare metadata Meta_TrampolineDelay for AnchorLandmark = Constants::C_TrampolineDefaultDelay;
@@ -97,6 +98,7 @@ Void Place() {
             declare Integer TrampolineUp for Object = Constants::C_TrampolineDefaultUp;
             declare Integer TrampolineDown for Object = Constants::C_TrampolineDefaultDown;
             declare Integer TrampolineCompass for Object = Constants::C_TrampolineDefaultCompass;
+            declare Integer TrampolineFrame for Object = Constants::C_TrampolineDefaultFrame;
             declare Integer TrampolineHoriz for Object = Constants::C_TrampolineDefaultHoriz;
             declare Boolean TrampolineWaitGround for Object = Constants::C_TrampolineDefaultWaitGround;
             declare Integer TrampolineDelay for Object = Constants::C_TrampolineDefaultDelay;
@@ -104,6 +106,7 @@ Void Place() {
             TrampolineUp = ML::Clamp(Meta_TrampolineUp, 0, 9);
             TrampolineDown = ML::Clamp(Meta_TrampolineDown, 0, 9);
             TrampolineCompass = ML::Clamp(Meta_TrampolineCompass, 0, 7);
+            TrampolineFrame = ML::Clamp(Meta_TrampolineFrame, 0, Constants::C_LaunchFrameMax);
             TrampolineHoriz = ML::Clamp(Meta_TrampolineHoriz, 0, 9);
             TrampolineWaitGround = Meta_TrampolineWaitGround;
             TrampolineDelay = ML::Clamp(Meta_TrampolineDelay, 0, Constants::C_TrampolineDelayMax);
