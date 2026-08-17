@@ -8,16 +8,19 @@
 ************************************************/
 
 #Include "Libs/smokegun/Constants.Script.txt" as Constants
+#Include "Libs/smokegun/Structs.Script.txt" as Structs
 #Include "Libs/smokegun/Tools.Script.txt" as Tools
 #Include "Libs/miltant/Nadeo_Fork/CustomUI.Script.txt" as CustomUI
 
 #Const Version "2026-08-17"
 #Const ScriptName "LaunchKeys.Script.txt"
 
+#Struct Structs::SLaunchKeyHud as SLaunchKeyHud
+
 /**
  * Both sides of this layer's net contract live here: the mode owns the launch arrays
  * (LoadLaunchConfig fills them, TryLaunchOnKey spends them) and calls the two publishers below,
- * which are the only writers of the Net_Launch* the page script reads. Everything they do is
+ * which are the only writers of the Net_LaunchKeys the page script reads. Everything they do is
  * presentation — nothing here decides what a key does, only how it is described. The per-player
  * arrays are reachable from a lib at all because `declare X for Player` is shared across every lib
  * the mode includes, the way Items.Script.txt's buff timers already are.
@@ -28,9 +31,30 @@
  * CurAmmo/CurAmmoMax; an action has no engine ammo behind it, so the same picture has to be
  * published by hand.
  *
+ * All of it travels as one SLaunchKeyHud per key rather than as a wire array per member: the two
+ * publishers own different members of the same record, and each leaves the other's alone, so a
+ * tenth thing to draw is a member here and a member there rather than a fifth place to edit.
+ *
  * Times are the mode's Now, which the client reads back as ArenaNow (the pairing the item-buff
  * gauges in Items.Script.txt already rely on).
  */
+
+// The published record as it stands, ready to be updated in place. A player who has never been
+// published to — and one the key count changed under, which only a rebuild can do — starts from
+// zeroes, the record that draws nothing.
+SLaunchKeyHud[] ReadKeys(CSmPlayer _Player) {
+    declare netwrite SLaunchKeyHud[] Net_LaunchKeys for _Player = [];
+    if (Net_LaunchKeys.count == Constants::C_LaunchKeyCount) {
+        return Net_LaunchKeys;
+    }
+
+    declare SLaunchKeyHud Empty;
+    declare SLaunchKeyHud[] Keys = [];
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        Keys.add(Empty);
+    }
+    return Keys;
+}
 
 // The half of that picture which only moves when the player enters a section configuring the keys
 // differently: what one press is made of, for the strip's second line. Published from
@@ -43,50 +67,43 @@ Void PublishConfig(CSmPlayer _Player) {
     declare Integer[] LaunchDir for _Player = [];
     declare Integer[] LaunchFrame for _Player = [];
 
-    declare netwrite Integer[] Net_LaunchUp for _Player = [];
-    declare netwrite Integer[] Net_LaunchDown for _Player = [];
-    declare netwrite Integer[] Net_LaunchSide for _Player = [];
-    declare netwrite Integer[] Net_LaunchDir for _Player = [];
-    declare netwrite Integer[] Net_LaunchFrame for _Player = [];
+    declare netwrite SLaunchKeyHud[] Net_LaunchKeys for _Player = [];
+    declare Keys = ReadKeys(_Player);
+    declare Configured = LaunchOn.count >= Constants::C_LaunchKeyCount;
 
-    // Same 0..9 digits the editor takes and the action's variant carries, under the editor's own
-    // names for them. An ungranted key stays at zero, which draws nothing.
-    declare Upward = Tools::LaunchZeroSlots();
-    declare Downward = Tools::LaunchZeroSlots();
-    declare Horizontal = Tools::LaunchZeroSlots();
-    declare Direction = Tools::LaunchZeroSlots();
-    // What that direction is measured against (C_LaunchFrame*). The strip draws the same arrow
-    // whichever frame it is, and hangs a symbol off it saying what the arrow is measured against —
-    // so the frame has to travel alongside the direction. C_LaunchFrameWorld is the zero.
-    declare Frame = Tools::LaunchZeroSlots();
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        declare Index = Key - 1;
+        // Same 0..9 digits the editor takes and the action's variant carries, under the editor's
+        // own names for them. An ungranted key stays at zero, which draws nothing — and its frame
+        // with it, C_LaunchFrameWorld being the zero.
+        declare Entry = Keys[Index];
+        Entry.Up = 0;
+        Entry.Down = 0;
+        Entry.Side = 0;
+        Entry.Dir = 0;
+        Entry.Frame = 0;
 
-    if (LaunchOn.count >= Constants::C_LaunchKeyCount) {
-        for (Key, 1, Constants::C_LaunchKeyCount) {
-            declare Index = Key - 1;
-            if (!LaunchOn[Index]) {
-                continue;
-            }
-
-            Upward[Index] = LaunchUp[Index];
+        if (Configured && LaunchOn[Index]) {
+            Entry.Up = LaunchUp[Index];
             // The same suppression TryLaunchOnKey applies before it arms the slot, so the strip
             // never advertises a down blast that will not fire.
-            Downward[Index] = Tools::LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
-            Horizontal[Index] = LaunchSide[Index];
+            Entry.Down = Tools::LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
+            Entry.Side = LaunchSide[Index];
             // The direction as the editor's arrow picker showed it, not the steps the action is
             // armed with: LaunchRelativeSteps only applies C_LaunchRelativeMirror, the calibration
             // that makes the launch come out the way the picker drew it.
-            Direction[Index] = LaunchDir[Index];
+            Entry.Dir = LaunchDir[Index];
+            // What that direction is measured against (C_LaunchFrame*). The strip draws the same
+            // arrow whichever frame it is, and hangs a symbol off it saying what the arrow is
+            // measured against — so the frame has to travel alongside the direction.
             if (LaunchFrame.count > Index) {
-                Frame[Index] = LaunchFrame[Index];
+                Entry.Frame = LaunchFrame[Index];
             }
         }
+        Keys[Index] = Entry;
     }
 
-    Net_LaunchUp = Upward;
-    Net_LaunchDown = Downward;
-    Net_LaunchSide = Horizontal;
-    Net_LaunchDir = Direction;
-    Net_LaunchFrame = Frame;
+    Net_LaunchKeys = Keys;
 }
 
 // The half that moves as the player plays: how many bars are lit and the window the bar that is
@@ -100,69 +117,68 @@ Void PublishCharges(CSmPlayer _Player) {
     declare Integer[] LaunchReadyAt for _Player = [];
     declare Integer[] LaunchCooldown for _Player = [];
 
-    declare netwrite Integer[] Net_LaunchBars for _Player = [];
-    declare netwrite Integer[] Net_LaunchFilled for _Player = [];
-    declare netwrite Integer[] Net_LaunchPartFrom for _Player = [];
-    declare netwrite Integer[] Net_LaunchPartTo for _Player = [];
+    declare netwrite SLaunchKeyHud[] Net_LaunchKeys for _Player = [];
+    declare Keys = ReadKeys(_Player);
+    declare Configured = LaunchOn.count >= Constants::C_LaunchKeyCount
+        && LaunchCharges.count >= Constants::C_LaunchKeyCount;
+    declare Changed = False;
 
-    // Bars 0 = no row for that key, which is also what an unconfigured player gets
-    declare Bars = Tools::LaunchZeroSlots();
-    declare Filled = Tools::LaunchZeroSlots();
-    declare PartFrom = Tools::LaunchZeroSlots();
-    declare PartTo = Tools::LaunchZeroSlots();
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        declare Index = Key - 1;
+        // Bars 0 = no row for that key, which is also what an unconfigured player gets
+        declare Bars = 0;
+        declare Filled = 0;
+        declare PartFrom = 0;
+        declare PartTo = 0;
 
-    if (LaunchOn.count >= Constants::C_LaunchKeyCount
-        && LaunchCharges.count >= Constants::C_LaunchKeyCount) {
-        for (Key, 1, Constants::C_LaunchKeyCount) {
-            declare Index = Key - 1;
-            if (!LaunchOn[Index]) {
-                continue;
-            }
-
+        if (Configured && LaunchOn[Index]) {
             if (LaunchAmount[Index] > 0) {
-                Bars[Index] = LaunchAmount[Index];
-                Filled[Index] = LaunchCharges[Index];
+                Bars = LaunchAmount[Index];
+                Filled = LaunchCharges[Index];
                 if (LaunchChargeAt[Index] > 0) {
                     // Only the fill part of the cycle: after a charge completes, the deadline
                     // minus the fill time lands past the pause, so while the pause runs PartFrom
                     // is still in the future and the layer's clamp leaves the bar sitting empty.
-                    PartFrom[Index] = LaunchChargeAt[Index] - Tools::LaunchChargeMs(LaunchGain[Index]);
-                    PartTo[Index] = LaunchChargeAt[Index];
+                    PartFrom = LaunchChargeAt[Index] - Tools::LaunchChargeMs(LaunchGain[Index]);
+                    PartTo = LaunchChargeAt[Index];
                 }
             } else {
                 // Unlimited: a single bar that empties on the press and fills over the cooldown,
                 // so the key still reports when it is ready again. The press that started it is
                 // LaunchReadyAt less the cooldown it was stamped with.
-                Bars[Index] = 1;
+                Bars = 1;
                 if (Now >= LaunchReadyAt[Index]) {
-                    Filled[Index] = 1;
+                    Filled = 1;
                 } else {
-                    PartFrom[Index] = LaunchReadyAt[Index] - LaunchCooldown[Index];
-                    PartTo[Index] = LaunchReadyAt[Index];
+                    PartFrom = LaunchReadyAt[Index] - LaunchCooldown[Index];
+                    PartTo = LaunchReadyAt[Index];
                 }
             }
         }
+
+        // Only touch what changed: this runs every tick for every player holding a launch key, and
+        // a netwrite nothing was assigned to costs nothing.
+        declare Entry = Keys[Index];
+        if (Entry.Bars == Bars && Entry.Filled == Filled && Entry.PartFrom == PartFrom
+            && Entry.PartTo == PartTo) {
+            continue;
+        }
+        Entry.Bars = Bars;
+        Entry.Filled = Filled;
+        Entry.PartFrom = PartFrom;
+        Entry.PartTo = PartTo;
+        Keys[Index] = Entry;
+        Changed = True;
     }
 
-    // Only reassign what changed: these run every tick for every player holding a launch key, and
-    // an untouched netwrite costs nothing.
-    if (!Tools::SameInts(Net_LaunchBars, Bars)) {
-        Net_LaunchBars = Bars;
-    }
-    if (!Tools::SameInts(Net_LaunchFilled, Filled)) {
-        Net_LaunchFilled = Filled;
-    }
-    if (!Tools::SameInts(Net_LaunchPartFrom, PartFrom)) {
-        Net_LaunchPartFrom = PartFrom;
-    }
-    if (!Tools::SameInts(Net_LaunchPartTo, PartTo)) {
-        Net_LaunchPartTo = PartTo;
+    if (Changed) {
+        Net_LaunchKeys = Keys;
     }
 }
 
 /**
  * The weapon's own bar strip is drawn by the engine (Modules/Common/player_state.Module.Gbx),
- * which nothing here can reach or reuse, so the same picture is rebuilt from the arrays
+ * which nothing here can reach or reuse, so the same picture is rebuilt from the record
  * PublishCharges and PublishConfig above put on the wire: bars per key, how many of them are lit,
  * the window the bar that is currently filling spans, and what a press of that key does.
  *
@@ -427,13 +443,22 @@ Text GetLayer() {
     #Const C_LegendGap 1.2
     #Const C_InfoSlack 1.5
 
-    // From Tools.Script.txt
-    Boolean SameInts(Integer[] _Left, Integer[] _Right) {
+    // The wire record, as declared for the lib half above. A page script cannot include, so it
+    // takes a copy of the same source Structs.Script.txt compiles out there.
+{{{Structs::GetSLaunchKeyHudStruct()}}}
+
+    // Everything the layout below is built from, which is the whole record bar the fill window:
+    // PartFrom / PartTo are read fresh every frame by the pass at the bottom of the loop, so a
+    // charge starting is not a reason to lay the block out again.
+    Boolean SameLayout(SLaunchKeyHud[] _Left, SLaunchKeyHud[] _Right) {
         if (_Left.count != _Right.count) {
             return False;
         }
-        foreach (Index => Value in _Left) {
-            if (_Right[Index] != Value) {
+        foreach (Index => Left in _Left) {
+            declare Right = _Right[Index];
+            if (Left.Bars != Right.Bars || Left.Filled != Right.Filled || Left.Up != Right.Up
+                || Left.Down != Right.Down || Left.Side != Right.Side || Left.Dir != Right.Dir
+                || Left.Frame != Right.Frame) {
                 return False;
             }
         }
@@ -522,17 +547,10 @@ Text GetLayer() {
         declare ColourOrientation = CL::HexToRgb(C_ColourOrientationHex);
 
         // What the strip currently shows. The layout only has to be rebuilt when the mode
-        // publishes something new; every other frame just redraws the bar that is filling.
-        declare Integer[] Shown_Bars = [];
-        declare Integer[] Shown_Filled = [];
-        // The strengths only move when the player enters a section that configures the keys
-        // differently — which the bar counts alone would miss, since two checkpoints can grant
-        // the same number of charges behind a different launch.
-        declare Integer[] Shown_Up = [];
-        declare Integer[] Shown_Down = [];
-        declare Integer[] Shown_Side = [];
-        declare Integer[] Shown_Dir = [];
-        declare Integer[] Shown_Frame = [];
+        // publishes something new; every other frame just redraws the bar that is filling. The
+        // strengths are part of that comparison and not only the bar counts, since two checkpoints
+        // can grant the same number of charges behind a different launch.
+        declare SLaunchKeyHud[] Shown_Keys = [];
         declare Boolean Shown_Anything = False;
         // The hue the quads are currently painted in. Out of any hue's range, so the first frame
         // that has a player to read always repaints.
@@ -574,13 +592,7 @@ Text GetLayer() {
                         if (Label_Empty != Null) Label_Empty.Visible = False;
                     }
                     if (Label_RelPrefix != Null) Label_RelPrefix.Visible = False;
-                    Shown_Bars = [];
-                    Shown_Filled = [];
-                    Shown_Up = [];
-                    Shown_Down = [];
-                    Shown_Side = [];
-                    Shown_Dir = [];
-                    Shown_Frame = [];
+                    Shown_Keys = [];
                     Row_Charging = [];
                     Row_BarWidth = [];
                     Shown_Anything = False;
@@ -616,27 +628,10 @@ Text GetLayer() {
                 }
             }
 
-            declare netread Integer[] Net_LaunchBars for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchFilled for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchPartFrom for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchPartTo for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchUp for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchDown for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchSide for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchDir for LocalPlayer = [];
-            declare netread Integer[] Net_LaunchFrame for LocalPlayer = [];
+            declare netread SLaunchKeyHud[] Net_LaunchKeys for LocalPlayer = [];
 
-            if (!SameInts(Shown_Bars, Net_LaunchBars) || !SameInts(Shown_Filled, Net_LaunchFilled)
-                || !SameInts(Shown_Up, Net_LaunchUp) || !SameInts(Shown_Down, Net_LaunchDown)
-                || !SameInts(Shown_Side, Net_LaunchSide) || !SameInts(Shown_Dir, Net_LaunchDir)
-                || !SameInts(Shown_Frame, Net_LaunchFrame)) {
-                Shown_Bars = Net_LaunchBars;
-                Shown_Filled = Net_LaunchFilled;
-                Shown_Up = Net_LaunchUp;
-                Shown_Down = Net_LaunchDown;
-                Shown_Side = Net_LaunchSide;
-                Shown_Dir = Net_LaunchDir;
-                Shown_Frame = Net_LaunchFrame;
+            if (!SameLayout(Shown_Keys, Net_LaunchKeys)) {
+                Shown_Keys = Net_LaunchKeys;
                 // Seeded a slot per key, so a key whose row is hidden below simply keeps its -1
                 Row_Charging = [];
                 Row_BarWidth = [];
@@ -658,25 +653,29 @@ Text GetLayer() {
                 declare VisibleCount = 0;
                 declare Boolean[] LegendOn = [False, False, False];
                 foreach (Index => Frame_Count in Frame_Rows) {
-                    if (Net_LaunchBars.count <= Index || Net_LaunchBars[Index] <= 0) {
+                    if (Net_LaunchKeys.count <= Index) {
+                        continue;
+                    }
+                    declare KeyHud = Net_LaunchKeys[Index];
+                    if (KeyHud.Bars <= 0) {
                         continue;
                     }
                     VisibleCount += 1;
-                    if (Net_LaunchSide.count <= Index || Net_LaunchSide[Index] <= 0
-                        || Net_LaunchFrame.count <= Index) {
+                    if (KeyHud.Side <= 0) {
                         continue;
                     }
-                    declare KeyFrame = Net_LaunchFrame[Index];
-                    if (KeyFrame >= 0 && KeyFrame < C_FrameCount) {
-                        LegendOn[KeyFrame] = True;
+                    if (KeyHud.Frame >= 0 && KeyHud.Frame < C_FrameCount) {
+                        LegendOn[KeyHud.Frame] = True;
                     }
                 }
 
                 declare VisibleRows = 0;
                 foreach (Index => Frame_Row in Frame_Rows) {
+                    // A key with no record yet draws nothing, the same way one whose record says
+                    // zero bars does.
                     declare Bars = 0;
-                    if (Net_LaunchBars.count > Index) {
-                        Bars = Net_LaunchBars[Index];
+                    if (Net_LaunchKeys.count > Index) {
+                        Bars = Net_LaunchKeys[Index].Bars;
                     }
 
                     if (Bars <= 0) {
@@ -685,11 +684,9 @@ Text GetLayer() {
                         }
                         continue;
                     }
+                    declare KeyHud = Net_LaunchKeys[Index];
 
-                    declare Filled = 0;
-                    if (Net_LaunchFilled.count > Index) {
-                        Filled = Net_LaunchFilled[Index];
-                    }
+                    declare Filled = KeyHud.Filled;
 
                     // Granted keys fill the slots from the top down with no gaps, so a lone key 3
                     // sits where key 1 would have been instead of floating over the middle of the
@@ -759,10 +756,7 @@ Text GetLayer() {
                     // 0 draws nothing at all — the horizontal one because its direction means
                     // nothing without a push behind it, the vertical ones because the usual key
                     // only launches upward and a row of zeroes would be noise.
-                    declare Integer[] Strengths = [0, 0, 0];	// in C_InfoItemNames' order
-                    if (Net_LaunchUp.count > Index) Strengths[0] = Net_LaunchUp[Index];
-                    if (Net_LaunchDown.count > Index) Strengths[1] = Net_LaunchDown[Index];
-                    if (Net_LaunchSide.count > Index) Strengths[C_InfoItemSide] = Net_LaunchSide[Index];
+                    declare Integer[] Strengths = [KeyHud.Up, KeyHud.Down, KeyHud.Side];	// in C_InfoItemNames' order
 
                     // How wide the items this row actually draws are, all told — one item on the
                     // usual row, three on a key that pushes every way at once, and the horizontal
@@ -809,14 +803,8 @@ Text GetLayer() {
                     // turns it another 45 deg clockwise. The icon points up as it stands, so the
                     // step is the whole of the turn, and what the arrow is measured against is left
                     // to the symbol hung off it.
-                    declare KeyFrame = C_FrameWorld;
-                    if (Net_LaunchFrame.count > Index) {
-                        KeyFrame = Net_LaunchFrame[Index];
-                    }
-                    declare SideDir = 0;
-                    if (Net_LaunchDir.count > Index) {
-                        SideDir = Net_LaunchDir[Index];
-                    }
+                    declare KeyFrame = KeyHud.Frame;
+                    declare SideDir = KeyHud.Dir;
 
                     declare Frame_RotSide <=> Frames_RotSide[Index];
                     if (Frame_RotSide != Null) {
@@ -907,23 +895,18 @@ Text GetLayer() {
             // the window it published holds for the whole charge, so the fill interpolates
             // smoothly however rarely the mode republishes.
             foreach (KeyIndex => Flat in Row_Charging) {
-                if (Flat < 0) {
+                if (Flat < 0 || Net_LaunchKeys.count <= KeyIndex) {
                     continue;
                 }
-                declare PartFrom = 0;
-                declare PartTo = 0;
-                if (Net_LaunchPartFrom.count > KeyIndex) {
-                    PartFrom = Net_LaunchPartFrom[KeyIndex];
-                }
-                if (Net_LaunchPartTo.count > KeyIndex) {
-                    PartTo = Net_LaunchPartTo[KeyIndex];
-                }
+                declare KeyHud = Net_LaunchKeys[KeyIndex];
 
                 // A PartFrom still in the future is the pause the gauge takes after a charge
                 // completes: the clamp leaves the bar sitting empty through it.
                 declare Ratio = 0.;
-                if (PartTo > PartFrom) {
-                    Ratio = ML::Clamp(ML::ToReal(ArenaNow - PartFrom) / ML::ToReal(PartTo - PartFrom), 0., 1.);
+                if (KeyHud.PartTo > KeyHud.PartFrom) {
+                    Ratio = ML::Clamp(
+                        ML::ToReal(ArenaNow - KeyHud.PartFrom) / ML::ToReal(KeyHud.PartTo - KeyHud.PartFrom),
+                        0., 1.);
                 }
                 declare FillWidth = Row_BarWidth[KeyIndex] * Ratio;
                 declare Lit = FillWidth > 0.;

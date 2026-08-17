@@ -1,4 +1,8 @@
 
+// The structs travelling over the wire, and one function per struct handing out its source. A page
+// script cannot include this file, so it takes a copy of the same text the lib side compiles.
+// Every #Struct stands ahead of the first function: a declaration after one does not parse.
+
 #Struct SSurvivalPlayer
 {
     Text Login;
@@ -6,6 +10,23 @@
     Integer Lives;
     Integer WillLoose; // amount of lives the player will loose at the end of the map
     Boolean IsAlive;
+}
+
+// Everything the launch strip draws for one key, published per player as one array of these by
+// LaunchKeys.Script.txt, which owns both sides of the contract. Bars 0 = the key is not granted and
+// draws no row at all. The first four move as the player plays, the last five only when they enter
+// a section configuring the keys differently.
+#Struct SLaunchKeyHud
+{
+    Integer Bars;		// charges the key holds, 1 for an unlimited key
+    Integer Filled;		// how many of them are lit
+    Integer PartFrom;	// the window the bar that is currently filling spans, in the mode's Now
+    Integer PartTo;
+    Integer Up;			// what one press is made of, as the editor's 0..9 digits
+    Integer Down;
+    Integer Side;
+    Integer Dir;		// the direction picker's own 0..7 step
+    Integer Frame;		// what that direction is measured against (C_LaunchFrame*)
 }
 
 Text GetSSurvivalPlayerStruct()
@@ -18,6 +39,24 @@ return """
     Integer Lives;
     Integer WillLoose; // amount of lives the player will loose at the end of the map
     Boolean IsAlive;
+}
+""";
+}
+
+Text GetSLaunchKeyHudStruct()
+{
+return """
+#Struct SLaunchKeyHud
+{
+    Integer Bars;
+    Integer Filled;
+    Integer PartFrom;
+    Integer PartTo;
+    Integer Up;
+    Integer Down;
+    Integer Side;
+    Integer Dir;
+    Integer Frame;
 }
 """;
 }

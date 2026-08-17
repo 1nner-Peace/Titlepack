@@ -127,19 +127,6 @@ Integer[] FindMissingNumbers(Integer[Integer] CPCounts) {
     return MissingNumbers;
 }
 
-/// Element-wise comparison; a length mismatch is a difference.
-Boolean SameInts(Integer[] _Left, Integer[] _Right) {
-    if (_Left.count != _Right.count) {
-        return False;
-    }
-    foreach (Index => Value in _Left) {
-        if (_Right[Index] != Value) {
-            return False;
-        }
-    }
-    return True;
-}
-
 // The launch abilities' shared arithmetic: pure functions of the C_Launch* constants, needed by
 // both the mode that fires a launch and the UI/LaunchKeys layer that describes one, so neither
 // side owns them.
