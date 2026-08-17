@@ -8,16 +8,163 @@
 ************************************************/
 
 #Include "Libs/smokegun/Constants.Script.txt" as Constants
+#Include "Libs/smokegun/Tools.Script.txt" as Tools
 #Include "Libs/miltant/Nadeo_Fork/CustomUI.Script.txt" as CustomUI
 
-#Const Version "2026-08-16"
+#Const Version "2026-08-17"
 #Const ScriptName "LaunchKeys.Script.txt"
 
 /**
+ * Both sides of this layer's net contract live here: the mode owns the launch arrays
+ * (LoadLaunchConfig fills them, TryLaunchOnKey spends them) and calls the two publishers below,
+ * which are the only writers of the Net_Launch* the page script reads. Everything they do is
+ * presentation — nothing here decides what a key does, only how it is described. The per-player
+ * arrays are reachable from a lib at all because `declare X for Player` is shared across every lib
+ * the mode includes, the way Items.Script.txt's buff timers already are.
+ *
+ * Between them they hand the page script everything it draws and nothing it would have to
+ * interpret: bars per key, how many of them are lit, the window the bar that is currently filling
+ * spans, and what a press of that key actually does. The engine draws the weapon's own gauge from
+ * CurAmmo/CurAmmoMax; an action has no engine ammo behind it, so the same picture has to be
+ * published by hand.
+ *
+ * Times are the mode's Now, which the client reads back as ArenaNow (the pairing the item-buff
+ * gauges in Items.Script.txt already rely on).
+ */
+
+// The half of that picture which only moves when the player enters a section configuring the keys
+// differently: what one press is made of, for the strip's second line. Published from
+// LoadLaunchConfig, where these values are read and clamped, rather than rebuilt per tick.
+Void PublishConfig(CSmPlayer _Player) {
+    declare Boolean[] LaunchOn for _Player = [];
+    declare Integer[] LaunchUp for _Player = [];
+    declare Integer[] LaunchDown for _Player = [];
+    declare Integer[] LaunchSide for _Player = [];
+    declare Integer[] LaunchDir for _Player = [];
+    declare Integer[] LaunchFrame for _Player = [];
+
+    declare netwrite Integer[] Net_LaunchUp for _Player = [];
+    declare netwrite Integer[] Net_LaunchDown for _Player = [];
+    declare netwrite Integer[] Net_LaunchSide for _Player = [];
+    declare netwrite Integer[] Net_LaunchDir for _Player = [];
+    declare netwrite Integer[] Net_LaunchFrame for _Player = [];
+
+    // Same 0..9 digits the editor takes and the action's variant carries, under the editor's own
+    // names for them. An ungranted key stays at zero, which draws nothing.
+    declare Upward = Tools::LaunchZeroSlots();
+    declare Downward = Tools::LaunchZeroSlots();
+    declare Horizontal = Tools::LaunchZeroSlots();
+    declare Direction = Tools::LaunchZeroSlots();
+    // What that direction is measured against (C_LaunchFrame*). The strip draws the same arrow
+    // whichever frame it is, and hangs a symbol off it saying what the arrow is measured against —
+    // so the frame has to travel alongside the direction. C_LaunchFrameWorld is the zero.
+    declare Frame = Tools::LaunchZeroSlots();
+
+    if (LaunchOn.count >= Constants::C_LaunchKeyCount) {
+        for (Key, 1, Constants::C_LaunchKeyCount) {
+            declare Index = Key - 1;
+            if (!LaunchOn[Index]) {
+                continue;
+            }
+
+            Upward[Index] = LaunchUp[Index];
+            // The same suppression TryLaunchOnKey applies before it arms the slot, so the strip
+            // never advertises a down blast that will not fire.
+            Downward[Index] = Tools::LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
+            Horizontal[Index] = LaunchSide[Index];
+            // The direction as the editor's arrow picker showed it, not the steps the action is
+            // armed with: LaunchRelativeSteps only applies C_LaunchRelativeMirror, the calibration
+            // that makes the launch come out the way the picker drew it.
+            Direction[Index] = LaunchDir[Index];
+            if (LaunchFrame.count > Index) {
+                Frame[Index] = LaunchFrame[Index];
+            }
+        }
+    }
+
+    Net_LaunchUp = Upward;
+    Net_LaunchDown = Downward;
+    Net_LaunchSide = Horizontal;
+    Net_LaunchDir = Direction;
+    Net_LaunchFrame = Frame;
+}
+
+// The half that moves as the player plays: how many bars are lit and the window the bar that is
+// currently filling spans.
+Void PublishCharges(CSmPlayer _Player) {
+    declare Boolean[] LaunchOn for _Player = [];
+    declare Integer[] LaunchAmount for _Player = [];
+    declare Integer[] LaunchGain for _Player = [];
+    declare Integer[] LaunchCharges for _Player = [];
+    declare Integer[] LaunchChargeAt for _Player = [];
+    declare Integer[] LaunchReadyAt for _Player = [];
+    declare Integer[] LaunchCooldown for _Player = [];
+
+    declare netwrite Integer[] Net_LaunchBars for _Player = [];
+    declare netwrite Integer[] Net_LaunchFilled for _Player = [];
+    declare netwrite Integer[] Net_LaunchPartFrom for _Player = [];
+    declare netwrite Integer[] Net_LaunchPartTo for _Player = [];
+
+    // Bars 0 = no row for that key, which is also what an unconfigured player gets
+    declare Bars = Tools::LaunchZeroSlots();
+    declare Filled = Tools::LaunchZeroSlots();
+    declare PartFrom = Tools::LaunchZeroSlots();
+    declare PartTo = Tools::LaunchZeroSlots();
+
+    if (LaunchOn.count >= Constants::C_LaunchKeyCount
+        && LaunchCharges.count >= Constants::C_LaunchKeyCount) {
+        for (Key, 1, Constants::C_LaunchKeyCount) {
+            declare Index = Key - 1;
+            if (!LaunchOn[Index]) {
+                continue;
+            }
+
+            if (LaunchAmount[Index] > 0) {
+                Bars[Index] = LaunchAmount[Index];
+                Filled[Index] = LaunchCharges[Index];
+                if (LaunchChargeAt[Index] > 0) {
+                    // Only the fill part of the cycle: after a charge completes, the deadline
+                    // minus the fill time lands past the pause, so while the pause runs PartFrom
+                    // is still in the future and the layer's clamp leaves the bar sitting empty.
+                    PartFrom[Index] = LaunchChargeAt[Index] - Tools::LaunchChargeMs(LaunchGain[Index]);
+                    PartTo[Index] = LaunchChargeAt[Index];
+                }
+            } else {
+                // Unlimited: a single bar that empties on the press and fills over the cooldown,
+                // so the key still reports when it is ready again. The press that started it is
+                // LaunchReadyAt less the cooldown it was stamped with.
+                Bars[Index] = 1;
+                if (Now >= LaunchReadyAt[Index]) {
+                    Filled[Index] = 1;
+                } else {
+                    PartFrom[Index] = LaunchReadyAt[Index] - LaunchCooldown[Index];
+                    PartTo[Index] = LaunchReadyAt[Index];
+                }
+            }
+        }
+    }
+
+    // Only reassign what changed: these run every tick for every player holding a launch key, and
+    // an untouched netwrite costs nothing.
+    if (!Tools::SameInts(Net_LaunchBars, Bars)) {
+        Net_LaunchBars = Bars;
+    }
+    if (!Tools::SameInts(Net_LaunchFilled, Filled)) {
+        Net_LaunchFilled = Filled;
+    }
+    if (!Tools::SameInts(Net_LaunchPartFrom, PartFrom)) {
+        Net_LaunchPartFrom = PartFrom;
+    }
+    if (!Tools::SameInts(Net_LaunchPartTo, PartTo)) {
+        Net_LaunchPartTo = PartTo;
+    }
+}
+
+/**
  * The weapon's own bar strip is drawn by the engine (Modules/Common/player_state.Module.Gbx),
- * which nothing here can reach or reuse, so the same picture is rebuilt from the arrays the mode
- * publishes in PublishLaunchHud: bars per key, how many of them are lit, the window the bar that
- * is currently filling spans, and what a press of that key does.
+ * which nothing here can reach or reuse, so the same picture is rebuilt from the arrays
+ * PublishCharges and PublishConfig above put on the wire: bars per key, how many of them are lit,
+ * the window the bar that is currently filling spans, and what a press of that key does.
  *
  * A row is one line. The strip on the right says how many launches are left; standing left of it
  * is what one of them is made of — upward, downward and horizontal strength as a digit and the

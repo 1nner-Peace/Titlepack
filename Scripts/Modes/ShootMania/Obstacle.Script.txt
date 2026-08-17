@@ -688,7 +688,7 @@ foreach (Event in PendingEvents) {
 										declare Integer TrampolineHoriz for Event.Object = Constants::C_TrampolineDefaultHoriz;
 
 										// Policy: optionally suppress the down blast when an up blast fires too
-										declare LaunchDown = LaunchDownStrength(TrampolineUp, TrampolineDown);
+										declare LaunchDown = Tools::LaunchDownStrength(TrampolineUp, TrampolineDown);
 
 										if (TrampolineUp > 0 || LaunchDown > 0 || TrampolineHoriz > 0) {
 											// Encoding and direction calibration both live in LaunchVariant, in the
@@ -1118,66 +1118,12 @@ Integer LaunchFrameSteps(Integer _Frame, Integer _EditorDir) {
     return LaunchActionCompass(_EditorDir);
 }
 
-// One slot per launch key, for the per-player arrays. The count is C_LaunchKeyCount's to
-// state, so nothing below has to spell out how many keys there are.
-Integer[] ZeroSlots() {
-    declare Integer[] Slots = [];
-    for (Key, 1, Constants::C_LaunchKeyCount) {
-        Slots.add(0);
-    }
-    return Slots;
-}
-
-Boolean[] FalseSlots() {
-    declare Boolean[] Slots = [];
-    for (Key, 1, Constants::C_LaunchKeyCount) {
-        Slots.add(False);
-    }
-    return Slots;
-}
-
-// The both-vertical policy, in one place: C_TrampolineAllowBothVertical False means an up blast
-// suppresses the down one. Everything that fires a launch — and the HUD that describes one —
-// asks here, so the strip can never advertise a blast the launcher drops.
-Integer LaunchDownStrength(Integer _Up, Integer _Down) {
-    if (!Constants::C_TrampolineAllowBothVertical && _Up > 0) {
-        return 0;
-    }
-    return _Down;
-}
-
 // The whole of encoding v4 (must match the action): the base names the frame the dir digit is
 // measured in — a world compass direction, a 45 deg step from where the player looks, or one from
 // where they are travelling — over base + up*1000 + down*100 + dir*10 + horiz.
 Integer LaunchVariant(Integer _Frame, Integer _Up, Integer _Down, Integer _Dir, Integer _Horiz) {
     return LaunchFrameBase(_Frame)
-        + _Up * 1000 + LaunchDownStrength(_Up, _Down) * 100 + LaunchFrameSteps(_Frame, _Dir) * 10 + _Horiz;
-}
-
-// ms one charge takes to come back at _GainPercent (100 % = C_LaunchChargeBaseMs). 0 = never.
-Integer LaunchChargeMs(Integer _GainPercent) {
-    if (_GainPercent <= 0) {
-        return 0;
-    }
-    declare ChargeMs = Constants::C_LaunchChargeBaseMs * 100 / _GainPercent;
-    if (ChargeMs < 1) {
-        return 1;
-    }
-    return ChargeMs;
-}
-
-// The pause the gauge takes before an emptied slot starts refilling, plus the fill itself. Every
-// deadline is armed with this, whichever way the slot came to be empty — a charge completing, a
-// shot spending one, or a section handing the player a part-spent key — because the native gauge
-// always holds first and a slot that skipped the hold would come back faster than its neighbours.
-// The HUD subtracts LaunchChargeMs back off to find where the fill starts, which leaves the pause
-// as a window the bar sits empty through.
-Integer LaunchCycleMs(Integer _GainPercent) {
-    declare ChargeMs = LaunchChargeMs(_GainPercent);
-    if (ChargeMs <= 0) {
-        return 0;
-    }
-    return ChargeMs + ChargeMs * Constants::C_LaunchChargeDelayPercent / 100;
+        + _Up * 1000 + Tools::LaunchDownStrength(_Up, _Down) * 100 + LaunchFrameSteps(_Frame, _Dir) * 10 + _Horiz;
 }
 
 // How many charges the player enters a section with, in the order the weapon rules apply: carry
@@ -1214,142 +1160,6 @@ Void InitLaunchCharges(CSmPlayer _Player, Boolean[] _PreviousOn, Integer[] _Prev
     }
 }
 
-// Hand the LaunchKeys layer everything it draws and nothing it would have to interpret: bars per
-// key, how many of them are lit, the window the bar that is currently filling spans, and what a
-// press of that key actually does. The engine draws the weapon's own gauge from
-// CurAmmo/CurAmmoMax; an action has no engine ammo behind it, so the same picture has to be
-// published by hand.
-//
-// Times are the mode's Now, which the client reads back as ArenaNow (the pairing the item-buff
-// gauges in Items.Script.txt already rely on).
-// The half of that picture which only moves when the player enters a section configuring the keys
-// differently: what one press is made of, for the strip's second line. Published from
-// LoadLaunchConfig, where these values are read and clamped, rather than rebuilt per tick.
-Void PublishLaunchConfig(CSmPlayer _Player) {
-    declare Boolean[] LaunchOn for _Player = [];
-    declare Integer[] LaunchUp for _Player = [];
-    declare Integer[] LaunchDown for _Player = [];
-    declare Integer[] LaunchSide for _Player = [];
-    declare Integer[] LaunchDir for _Player = [];
-    declare Integer[] LaunchFrame for _Player = [];
-
-    declare netwrite Integer[] Net_LaunchUp for _Player = [];
-    declare netwrite Integer[] Net_LaunchDown for _Player = [];
-    declare netwrite Integer[] Net_LaunchSide for _Player = [];
-    declare netwrite Integer[] Net_LaunchDir for _Player = [];
-    declare netwrite Integer[] Net_LaunchFrame for _Player = [];
-
-    // Same 0..9 digits the editor takes and the action's variant carries, under the editor's own
-    // names for them. An ungranted key stays at zero, which draws nothing.
-    declare Upward = ZeroSlots();
-    declare Downward = ZeroSlots();
-    declare Horizontal = ZeroSlots();
-    declare Direction = ZeroSlots();
-    // What that direction is measured against (C_LaunchFrame*). The strip draws the same arrow
-    // whichever frame it is, and hangs a symbol off it saying what the arrow is measured against —
-    // so the frame has to travel alongside the direction. C_LaunchFrameWorld is the zero.
-    declare Frame = ZeroSlots();
-
-    if (LaunchOn.count >= Constants::C_LaunchKeyCount) {
-        for (Key, 1, Constants::C_LaunchKeyCount) {
-            declare Index = Key - 1;
-            if (!LaunchOn[Index]) {
-                continue;
-            }
-
-            Upward[Index] = LaunchUp[Index];
-            // The same suppression TryLaunchOnKey applies before it arms the slot, so the strip
-            // never advertises a down blast that will not fire.
-            Downward[Index] = LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
-            Horizontal[Index] = LaunchSide[Index];
-            // The direction as the editor's arrow picker showed it, not the steps the action is
-            // armed with: LaunchRelativeSteps only applies C_LaunchRelativeMirror, the calibration
-            // that makes the launch come out the way the picker drew it.
-            Direction[Index] = LaunchDir[Index];
-            if (LaunchFrame.count > Index) {
-                Frame[Index] = LaunchFrame[Index];
-            }
-        }
-    }
-
-    Net_LaunchUp = Upward;
-    Net_LaunchDown = Downward;
-    Net_LaunchSide = Horizontal;
-    Net_LaunchDir = Direction;
-    Net_LaunchFrame = Frame;
-}
-
-// The half that moves as the player plays: how many bars are lit and the window the bar that is
-// currently filling spans.
-Void PublishLaunchHud(CSmPlayer _Player) {
-    declare Boolean[] LaunchOn for _Player = [];
-    declare Integer[] LaunchAmount for _Player = [];
-    declare Integer[] LaunchGain for _Player = [];
-    declare Integer[] LaunchCharges for _Player = [];
-    declare Integer[] LaunchChargeAt for _Player = [];
-    declare Integer[] LaunchReadyAt for _Player = [];
-    declare Integer[] LaunchCooldown for _Player = [];
-
-    declare netwrite Integer[] Net_LaunchBars for _Player = [];
-    declare netwrite Integer[] Net_LaunchFilled for _Player = [];
-    declare netwrite Integer[] Net_LaunchPartFrom for _Player = [];
-    declare netwrite Integer[] Net_LaunchPartTo for _Player = [];
-
-    // Bars 0 = no row for that key, which is also what an unconfigured player gets
-    declare Bars = ZeroSlots();
-    declare Filled = ZeroSlots();
-    declare PartFrom = ZeroSlots();
-    declare PartTo = ZeroSlots();
-
-    if (LaunchOn.count >= Constants::C_LaunchKeyCount
-        && LaunchCharges.count >= Constants::C_LaunchKeyCount) {
-        for (Key, 1, Constants::C_LaunchKeyCount) {
-            declare Index = Key - 1;
-            if (!LaunchOn[Index]) {
-                continue;
-            }
-
-            if (LaunchAmount[Index] > 0) {
-                Bars[Index] = LaunchAmount[Index];
-                Filled[Index] = LaunchCharges[Index];
-                if (LaunchChargeAt[Index] > 0) {
-                    // Only the fill part of the cycle: after a charge completes, the deadline
-                    // minus the fill time lands past the pause, so while the pause runs PartFrom
-                    // is still in the future and the layer's clamp leaves the bar sitting empty.
-                    PartFrom[Index] = LaunchChargeAt[Index] - LaunchChargeMs(LaunchGain[Index]);
-                    PartTo[Index] = LaunchChargeAt[Index];
-                }
-            } else {
-                // Unlimited: a single bar that empties on the press and fills over the cooldown,
-                // so the key still reports when it is ready again. The press that started it is
-                // LaunchReadyAt less the cooldown it was stamped with.
-                Bars[Index] = 1;
-                if (Now >= LaunchReadyAt[Index]) {
-                    Filled[Index] = 1;
-                } else {
-                    PartFrom[Index] = LaunchReadyAt[Index] - LaunchCooldown[Index];
-                    PartTo[Index] = LaunchReadyAt[Index];
-                }
-            }
-        }
-    }
-
-    // Only reassign what changed: these run every tick for every player holding a launch key, and
-    // an untouched netwrite costs nothing.
-    if (!Tools::SameInts(Net_LaunchBars, Bars)) {
-        Net_LaunchBars = Bars;
-    }
-    if (!Tools::SameInts(Net_LaunchFilled, Filled)) {
-        Net_LaunchFilled = Filled;
-    }
-    if (!Tools::SameInts(Net_LaunchPartFrom, PartFrom)) {
-        Net_LaunchPartFrom = PartFrom;
-    }
-    if (!Tools::SameInts(Net_LaunchPartTo, PartTo)) {
-        Net_LaunchPartTo = PartTo;
-    }
-}
-
 // Read the launch settings off the landmark governing the player's current section — the
 // last checkpoint they captured, or the spawn before the first one. No landmark (spectator,
 // pre-spawn, legacy map without the metadata) leaves every key ungranted.
@@ -1379,21 +1189,21 @@ Void ResetLaunchConfig(CSmPlayer _Player) {
     // exit leaves it False, which is what stops the per-tick work for spectators and legacy maps.
     declare Boolean LaunchAnyOn for _Player = False;
 
-    LaunchOn = FalseSlots();
-    LaunchUp = ZeroSlots();
-    LaunchDown = ZeroSlots();
-    LaunchSide = ZeroSlots();
-    LaunchDir = ZeroSlots();
-    LaunchFrame = ZeroSlots();
-    LaunchCooldown = ZeroSlots();
-    LaunchGround = FalseSlots();
-    LaunchReadyAt = ZeroSlots();
-    LaunchAmount = ZeroSlots();
-    LaunchGain = ZeroSlots();
-    LaunchRefill = FalseSlots();
-    LaunchEmpty = FalseSlots();
-    LaunchCharges = ZeroSlots();
-    LaunchChargeAt = ZeroSlots();
+    LaunchOn = Tools::LaunchFalseSlots();
+    LaunchUp = Tools::LaunchZeroSlots();
+    LaunchDown = Tools::LaunchZeroSlots();
+    LaunchSide = Tools::LaunchZeroSlots();
+    LaunchDir = Tools::LaunchZeroSlots();
+    LaunchFrame = Tools::LaunchZeroSlots();
+    LaunchCooldown = Tools::LaunchZeroSlots();
+    LaunchGround = Tools::LaunchFalseSlots();
+    LaunchReadyAt = Tools::LaunchZeroSlots();
+    LaunchAmount = Tools::LaunchZeroSlots();
+    LaunchGain = Tools::LaunchZeroSlots();
+    LaunchRefill = Tools::LaunchFalseSlots();
+    LaunchEmpty = Tools::LaunchFalseSlots();
+    LaunchCharges = Tools::LaunchZeroSlots();
+    LaunchChargeAt = Tools::LaunchZeroSlots();
     LaunchAnyOn = False;
 }
 
@@ -1424,8 +1234,8 @@ Void LoadLaunchConfig(CSmPlayer _Player, Boolean _Respawned) {
     if (!MapLandmarks.existskey(Section)) {
         // Nothing granted: publish the zeroes once so a strip left over from the previous
         // section goes away, rather than leaving the last setup on screen.
-        PublishLaunchConfig(_Player);
-        PublishLaunchHud(_Player);
+        LaunchKeys::PublishConfig(_Player);
+        LaunchKeys::PublishCharges(_Player);
         return;
     }
     declare Anchor <=> MapLandmarks[Section];
@@ -1539,8 +1349,8 @@ Void LoadLaunchConfig(CSmPlayer _Player, Boolean _Respawned) {
     // The strip's static half is settled now and cannot change again until the next section, so
     // publish it here rather than rebuilding it every tick. The charge half follows so a section
     // that revokes every key clears the bars on the same pass.
-    PublishLaunchConfig(_Player);
-    PublishLaunchHud(_Player);
+    LaunchKeys::PublishConfig(_Player);
+    LaunchKeys::PublishCharges(_Player);
 }
 
 // Refill the charges a player has spent, one key at a time. The charge in progress is a deadline
@@ -1570,12 +1380,12 @@ Void TickLaunchCharges(CSmPlayer _Player) {
             // Idle with room to fill and no deadline running: a section handed the player a
             // part-spent key. Same full cycle as everywhere else, so entering a section is not a
             // way to skip the hold.
-            LaunchChargeAt[Index] = Now + LaunchCycleMs(LaunchGain[Index]);
+            LaunchChargeAt[Index] = Now + Tools::LaunchCycleMs(LaunchGain[Index]);
         } else if (Now >= LaunchChargeAt[Index]) {
             LaunchCharges[Index] += 1;
             if (LaunchCharges[Index] < LaunchAmount[Index]) {
                 // A charge did just complete: the gauge holds before the next one starts
-                LaunchChargeAt[Index] = Now + LaunchCycleMs(LaunchGain[Index]);
+                LaunchChargeAt[Index] = Now + Tools::LaunchCycleMs(LaunchGain[Index]);
             } else {
                 LaunchChargeAt[Index] = 0;
             }
@@ -1592,7 +1402,7 @@ Void TickLaunchKeys(CSmPlayer _Player) {
         return;
     }
     TickLaunchCharges(_Player);
-    PublishLaunchHud(_Player);
+    LaunchKeys::PublishCharges(_Player);
 }
 
 // Bound key = granted ability. Unbinding is what revokes it at the next checkpoint.
@@ -1713,7 +1523,7 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
     }
 
     // Policy: optionally suppress the down blast when an up blast fires too
-    declare DownStrength = LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
+    declare DownStrength = Tools::LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
     if (LaunchUp[Index] <= 0 && DownStrength <= 0 && LaunchSide[Index] <= 0) {
         return;
     }
@@ -1731,7 +1541,7 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
         // as fast as one the gauge emptied itself, so the first shot off a full gauge is not
         // quietly cheaper than the ones after it.
         if (LaunchChargeAt[Index] <= 0 && LaunchGain[Index] > 0) {
-            LaunchChargeAt[Index] = Now + LaunchCycleMs(LaunchGain[Index]);
+            LaunchChargeAt[Index] = Now + Tools::LaunchCycleMs(LaunchGain[Index]);
         }
     }
 

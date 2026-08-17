@@ -10,6 +10,7 @@
 #Include "Libs/miltant/Nadeo_Fork/ShootMania/Map.Script.txt" as Map
 #Include "Libs/smokegun/Player.Script.txt" as Player
 #Include "Libs/miltant/Randomizer.Script.txt" as RNG
+#Include "Libs/smokegun/Constants.Script.txt" as Constants
 
 /***************************************
     CONSTANTS
@@ -137,6 +138,64 @@ Boolean SameInts(Integer[] _Left, Integer[] _Right) {
         }
     }
     return True;
+}
+
+// The launch abilities' shared arithmetic: pure functions of the C_Launch* constants, needed by
+// both the mode that fires a launch and the UI/LaunchKeys layer that describes one, so neither
+// side owns them.
+
+// One slot per launch key, for the per-player arrays. The count is C_LaunchKeyCount's to
+// state, so nothing else has to spell out how many keys there are.
+Integer[] LaunchZeroSlots() {
+    declare Integer[] Slots = [];
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        Slots.add(0);
+    }
+    return Slots;
+}
+
+Boolean[] LaunchFalseSlots() {
+    declare Boolean[] Slots = [];
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        Slots.add(False);
+    }
+    return Slots;
+}
+
+// The both-vertical policy, in one place: C_TrampolineAllowBothVertical False means an up blast
+// suppresses the down one. Everything that fires a launch — and the HUD that describes one —
+// asks here, so the strip can never advertise a blast the launcher drops.
+Integer LaunchDownStrength(Integer _Up, Integer _Down) {
+    if (!Constants::C_TrampolineAllowBothVertical && _Up > 0) {
+        return 0;
+    }
+    return _Down;
+}
+
+// ms one charge takes to come back at _GainPercent (100 % = C_LaunchChargeBaseMs). 0 = never.
+Integer LaunchChargeMs(Integer _GainPercent) {
+    if (_GainPercent <= 0) {
+        return 0;
+    }
+    declare ChargeMs = Constants::C_LaunchChargeBaseMs * 100 / _GainPercent;
+    if (ChargeMs < 1) {
+        return 1;
+    }
+    return ChargeMs;
+}
+
+// The pause the gauge takes before an emptied slot starts refilling, plus the fill itself. Every
+// deadline is armed with this, whichever way the slot came to be empty — a charge completing, a
+// shot spending one, or a section handing the player a part-spent key — because the native gauge
+// always holds first and a slot that skipped the hold would come back faster than its neighbours.
+// The HUD subtracts LaunchChargeMs back off to find where the fill starts, which leaves the pause
+// as a window the bar sits empty through.
+Integer LaunchCycleMs(Integer _GainPercent) {
+    declare ChargeMs = LaunchChargeMs(_GainPercent);
+    if (ChargeMs <= 0) {
+        return 0;
+    }
+    return ChargeMs + ChargeMs * Constants::C_LaunchChargeDelayPercent / 100;
 }
 
 Integer GetWeaponTypeFromSpawn(CSmMapLandmark SpawnLandmark) {
