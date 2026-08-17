@@ -215,6 +215,21 @@
 //   True  = arm Slot_D on a key press (pads and keys share one firing instance).
 //   False = arm the key's own slot.
 #Const C_LaunchFireOnPadSlot True
+// One launch at a time per firing instance. The action's fire latch (State_Boolean1 in
+// Actions/Trampoline.Script.txt) is cleared ONLY by a tick on which it reads its Variant back as
+// 0, and it reads that Variant once per tick — so the mode must never write a disarm and the next
+// arm into the same instance without leaving a loop pass in between. It would only ever see the
+// second value, the latch would stay set, and a latched instance never fires, so it never echoes,
+// so the mode never disarms it again: the slot is wedged for the rest of the map. That is exactly
+// what rapid fire used to do (a fire echo and the next press land in one pass), and the symptom
+// is the giveaway — the charges keep discharging, because every gate the mode owns still passes,
+// while nothing launches. One pass is provably enough (mode and action each run once per tick, so
+// exactly one action read falls between two consecutive passes); the second buys a tick of slack.
+#Const C_LaunchSlotRearmPasses 2
+// Safety net for an arm whose fire echo never comes back — the action only fires while its owner
+// is spawned, so a launch armed on the tick a player dies is simply never acknowledged. Without
+// it the slot would count as busy forever. Generous next to the ~2 ticks a real echo takes.
+#Const C_LaunchSlotArmTimeoutMs 500
 
 // All trampoline launch-pad items (Normal + Small size families under Items\Trampolines).
 // Registered in Items::LoadItems so they spawn at roundstart; runtime + editor

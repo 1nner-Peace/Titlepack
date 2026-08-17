@@ -30,17 +30,23 @@
 // calibration or policy changes.
 // C_VariantBase / C_VariantBaseRel / C_VariantBaseMov must match
 // Constants::C_TrampolineVariantBase / C_TrampolineVariantBaseRelative /
-// C_TrampolineVariantBaseMovement.
-// State_Boolean1 = already fired (reset when the mode zeroes the variant).
+// C_TrampolineVariantBaseMovement, and C_VariantPackedMax must match
+// Constants::C_TrampolineVariantPackedMax (the mode already spells the ceiling that way).
+// State_Boolean1 = already fired (reset when the mode zeroes the variant). Reset means a TICK on
+// which main() reads Variant as 0 — not merely the mode having written one. If the mode writes the
+// disarm and the next launch in a single pass, this instance only ever sees the second value, the
+// latch stays set, and a latched instance never fires and so never echoes, which is what the mode
+// waits on to disarm it: silent for the rest of the map. Constants::C_LaunchSlotRearmPasses is the
+// mode-side rule that keeps that from happening; nothing here can detect the case on its own.
 // State_Integer1 = gauge initialized (see main): an instance the mode binds
 // to a key must be activatable, or the press never reaches the mode.
 // =====================================================================
 #Const C_VariantBase    10000
-#Const C_VariantMax     19989	// base + 9*1000 + 9*100 + 9*10 + 9
 #Const C_VariantBaseRel 20000
-#Const C_VariantMaxRel  29989
 #Const C_VariantBaseMov 30000
-#Const C_VariantMaxMov  39989
+// One ceiling for all three bases instead of a C_VariantMax* each: the base only picks the
+// frame, so the four packed digits span the same range whichever base carries them.
+#Const C_VariantPackedMax 9989	// 9*1000 + 9*100 + 9*10 + 9
 
 // Squared horizontal speed below which the movement frame has nothing to turn around.
 // Squared so no Sqrt is needed (0.5 m/s; a running player is around 10). Under it the
@@ -145,16 +151,20 @@ main() {
 		// Echo the fired variant to the mode: it disarms us (resets the variant) and closes the PvP window
 		SendRulesEvent("trampoline", [""^Armed], Owner, Null);
 
-		declare Relative = Armed >= C_VariantBaseRel && Armed <= C_VariantMaxRel;
-		declare Movement = Armed >= C_VariantBaseMov && Armed <= C_VariantMaxMov;
-		if ((Armed >= C_VariantBase && Armed <= C_VariantMax) || Relative || Movement) {
-			declare Base = C_VariantBase;
-			if (Relative) {
-				Base = C_VariantBaseRel;
-			} else if (Movement) {
-				Base = C_VariantBaseMov;
-			}
-			declare Packed  = Armed - Base;
+		// The frame is whichever base the value has cleared, tested highest first; the payload
+		// is what is left over. One range test then covers all three bases: the leftover must be
+		// in range AND Armed must have reached the lowest base, because anything under it leaves
+		// a negative leftover that a bare ceiling test would wave through.
+		declare Base = C_VariantBase;
+		if (Armed >= C_VariantBaseMov) {
+			Base = C_VariantBaseMov;
+		} else if (Armed >= C_VariantBaseRel) {
+			Base = C_VariantBaseRel;
+		}
+		declare Relative = Base == C_VariantBaseRel;
+		declare Movement = Base == C_VariantBaseMov;
+		declare Packed   = Armed - Base;
+		if (Armed >= C_VariantBase && Packed <= C_VariantPackedMax) {
 			declare Up      = Packed / 1000;
 			declare Down    = (Packed / 100) % 10;
 			declare Dir     = (Packed / 10) % 10;

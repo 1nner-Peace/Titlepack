@@ -111,6 +111,7 @@ declare Boolean G_MapHasLaunchKeys;	// does any landmark grant a launch key (see
 declare Integer G_TrampolinePvPWindowEnd;
 declare Boolean G_TrampolinePvPRestore;
 declare Integer G_TrampolinePvPInFlight;	// launches armed but not yet confirmed fired; the window only collapses when this hits 0
+declare Integer G_LaunchLoopPass;	// counts Match_PlayLoop passes, so a slot can be held shut for a tick (see C_LaunchSlotRearmPasses)
 declare Boolean[Ident] G_PendingRS;
 
 declare Boolean G_LastUsePvPWeapons;
@@ -238,6 +239,7 @@ Obstacle::LoadActions();
 G_TrampolinePvPWindowEnd = 0;
 G_TrampolinePvPRestore = False;
 G_TrampolinePvPInFlight = 0;
+G_LaunchLoopPass = 0;
 ActionList_Begin();
 G_TrampolineActionId = ActionList_Add("Trampoline.Action.Gbx");
 // One model per launch key, so a press echo identifies its key through Event.ActionId
@@ -456,6 +458,11 @@ Layers::Create("RespawnBehavior", RespawnBehavior::GetLayer(False));
 ***
 //Replay_SaveInterface();
 Dynamics::Compute();
+
+// One tick of the launch clock. Counted rather than measured in ms because what a firing action
+// instance needs between a disarm and the next arm is a read of its own, and it reads once per
+// pass — see C_LaunchSlotRearmPasses and LaunchSlotReady.
+G_LaunchLoopPass += 1;
 
 // Close the PvP window opened for a trampoline launch (opened on touch, collapsed on the fire echo)
 if (G_TrampolinePvPWindowEnd > 0 && Now > G_TrampolinePvPWindowEnd) {
@@ -680,8 +687,11 @@ foreach (Event in PendingEvents) {
 									// launches them again until it passes -- which is also what keeps a pad from
 									// refiring every tick while they stand on it. Only an actual launch stamps it,
 									// so a pad left at strength 0 never silences the ones around it.
+									// LaunchSlotReady is in the same condition as the cooldown so a touch the
+									// pad slot cannot take yet stamps nothing: touches keep flowing every tick,
+									// so the launch goes out on the first one the slot is free for.
 									declare Integer TrampolineCooldownEnd for Event.Player = 0;
-									if (LaunchGatesOpen && Now > TrampolineCooldownEnd) {
+									if (LaunchGatesOpen && Now > TrampolineCooldownEnd && LaunchSlotReady(Event.Player, 0)) {
 										// Launch parameters from the anchor metadata (copied onto the
 										// object, clamped, in Items::Place)
 										declare Integer TrampolineUp for Event.Object = Constants::C_TrampolineDefaultUp;
@@ -1387,6 +1397,77 @@ Void TickLaunchKeys(CSmPlayer _Player) {
     LaunchKeys::PublishCharges(_Player);
 }
 
+// What the mode knows about the action instances that actually FIRE a launch, indexed by fire
+// slot: 0 is the pad slot (Slot_D) and 1..C_LaunchKeyCount the key slots, so these two are one
+// longer than the per-key arrays above. LaunchSlotArmedAt is the Now a launch was handed to the
+// slot (0 = nothing waiting on a fire echo); LaunchSlotRearmPass is the first loop pass on which
+// it may be armed again. Together they keep one instance to one launch at a time — the rule
+// C_LaunchSlotRearmPasses spells out. Called by everything that WRITES those arrays; the read
+// side (LaunchSlotReady) treats a short array as "free" instead, so it stays cheap.
+Void EnsureLaunchSlotState(CSmPlayer _Player) {
+    declare Integer[] LaunchSlotArmedAt for _Player = [];
+    declare Integer[] LaunchSlotRearmPass for _Player = [];
+    if (LaunchSlotArmedAt.count > Constants::C_LaunchKeyCount
+        && LaunchSlotRearmPass.count > Constants::C_LaunchKeyCount) {
+        return;
+    }
+    LaunchSlotArmedAt = [];
+    LaunchSlotRearmPass = [];
+    for (Slot, 0, Constants::C_LaunchKeyCount) {
+        LaunchSlotArmedAt.add(0);
+        LaunchSlotRearmPass.add(0);
+    }
+}
+
+// Forget what was believed about a fire slot because the instance behind it has just been
+// replaced: a fresh one is disarmed with its fire latch already clear, so it can take a launch
+// immediately. _SlotIndex < 0 clears every slot.
+Void ClearLaunchSlotState(CSmPlayer _Player, Integer _SlotIndex) {
+    EnsureLaunchSlotState(_Player);
+    declare Integer[] LaunchSlotArmedAt for _Player = [];
+    declare Integer[] LaunchSlotRearmPass for _Player = [];
+    for (Slot, 0, Constants::C_LaunchKeyCount) {
+        if (_SlotIndex >= 0 && Slot != _SlotIndex) {
+            continue;
+        }
+        LaunchSlotArmedAt[Slot] = 0;
+        LaunchSlotRearmPass[Slot] = 0;
+    }
+}
+
+// May this fire slot be handed a launch right now? Both halves of the answer are about the one
+// action instance behind the slot, never about the trigger in front of it — pad cooldowns, key
+// cooldowns and charges are all still the caller's business. Not a pure test: a slot found timed
+// out is recovered here, which is also why every caller asks before it spends anything.
+Boolean LaunchSlotReady(CSmPlayer _Player, Integer _SlotIndex) {
+    declare Integer[] LaunchSlotArmedAt for _Player = [];
+    declare Integer[] LaunchSlotRearmPass for _Player = [];
+    // Too short to hold this slot means never written for this player (EnsureLaunchSlotState only
+    // ever sizes them in full), so nothing is armed and nothing is waiting out a disarm: free.
+    // Answered rather than sized, so the hot reject path this sits on costs the two lookups above
+    // and nothing else — the writers below are what actually fill the arrays in.
+    if (LaunchSlotArmedAt.count <= _SlotIndex || LaunchSlotRearmPass.count <= _SlotIndex) {
+        return True;
+    }
+    if (LaunchSlotArmedAt[_SlotIndex] > 0) {
+        // A launch is still sitting in there unfired; overwriting it would drop it silently.
+        if (Now < LaunchSlotArmedAt[_SlotIndex] + Constants::C_LaunchSlotArmTimeoutMs) {
+            return False;
+        }
+        // Its fire echo never came back (C_LaunchSlotArmTimeoutMs). Recover the way a real echo
+        // would instead of merely releasing the slot: if the action did fire and only the echo
+        // went missing, its latch is still set, and nothing but a zeroed pass of its own clears
+        // that — release alone would arm straight back over the 0 and wedge the instance.
+        LaunchSlotArmedAt[_SlotIndex] = 0;
+        LaunchSlotRearmPass[_SlotIndex] = G_LaunchLoopPass + Constants::C_LaunchSlotRearmPasses;
+        ActionSetVariant(_Player, LaunchSlot(_SlotIndex), 0);
+        return False;
+    }
+    // Disarmed, but the action has not necessarily read that 0 back yet — and until it does, its
+    // fire latch is still set and the next arm would wedge it (see C_LaunchSlotRearmPasses).
+    return G_LaunchLoopPass >= LaunchSlotRearmPass[_SlotIndex];
+}
+
 // Bound key = granted ability. Unbinding is what revokes it at the next checkpoint.
 //
 // A slot is only touched when its granted state actually changes: re-creating an instance is
@@ -1417,6 +1498,9 @@ Void ApplyLaunchBinds(CSmPlayer _Player) {
             ActionBind(_Player, LaunchSlot(Key), LaunchInput(Key));
             // Disarmed, so a fresh instance can't fire on whatever the slot held before
             ActionSetVariant(_Player, LaunchSlot(Key), 0);
+            // ...and the instance this replaced took its pending launch and its fire latch with
+            // it, so nothing about the old one should still gate the new one
+            ClearLaunchSlotState(_Player, Key);
         } else {
             ActionBind(_Player, LaunchSlot(Key), CSmMode::EActionInput::None);
         }
@@ -1432,6 +1516,8 @@ Void LoadLaunchActions(CSmPlayer _Player) {
     declare Integer[] LaunchArmedSlots for _Player = [];
     LaunchBound = [False, False, False, False];
     LaunchArmedSlots = [];
+    // Fresh instances: nothing armed in them and no fire latch to wait out
+    ClearLaunchSlotState(_Player, -1);
     LoadTrampolineAction(_Player);
 }
 
@@ -1450,11 +1536,22 @@ Void OpenLaunchPvPWindow() {
 // Arm one launch: open the PvP window, remember which slot is waiting to fire, then hand the
 // variant to the action.
 Void ArmLaunch(CSmPlayer _Player, Integer _SlotIndex, Integer _Variant) {
+    // Backstop, not the gate: callers ask LaunchSlotReady themselves so a launch that cannot go
+    // out yet costs nothing (no charge, no cooldown stamp). Repeating the test here is what makes
+    // it impossible for a caller that forgets to wedge the instance.
+    if (!LaunchSlotReady(_Player, _SlotIndex)) {
+        return;
+    }
+
     OpenLaunchPvPWindow();
     G_TrampolinePvPInFlight += 1;
 
     declare Integer[] LaunchArmedSlots for _Player = [];
     LaunchArmedSlots.add(_SlotIndex);
+
+    EnsureLaunchSlotState(_Player);
+    declare Integer[] LaunchSlotArmedAt for _Player = [];
+    LaunchSlotArmedAt[_SlotIndex] = Now;	// busy until the fire echo comes back (or the timeout)
 
     ActionSetVariant(_Player, LaunchSlot(_SlotIndex), _Variant);
 }
@@ -1468,6 +1565,15 @@ Void DisarmLaunch(CSmPlayer _Player) {
         SlotIndex = LaunchArmedSlots[0];
         LaunchArmedSlots.removekey(0);
     }
+
+    EnsureLaunchSlotState(_Player);
+    declare Integer[] LaunchSlotArmedAt for _Player = [];
+    declare Integer[] LaunchSlotRearmPass for _Player = [];
+    LaunchSlotArmedAt[SlotIndex] = 0;
+    // Hold the slot for a pass so the action gets a read of its own on this 0. Skipping that is
+    // what silenced the action under rapid fire; C_LaunchSlotRearmPasses has the full story.
+    LaunchSlotRearmPass[SlotIndex] = G_LaunchLoopPass + Constants::C_LaunchSlotRearmPasses;
+
     ActionSetVariant(_Player, LaunchSlot(SlotIndex), 0);
 }
 
@@ -1482,6 +1588,36 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
     if (LaunchOn.count < _Key || !LaunchOn[_Key - 1]) {
         return;
     }
+    declare Index = _Key - 1;
+
+    // The three rejecting gates come before the rest of the slots are read, because this is the
+    // hot path: a held key echoes every tick (see Actions/Trampoline.Script.txt) and almost
+    // every echo dies right here — 49 of 50 at the default 500 ms cooldown, 149 of 150 while a
+    // key is waiting on a charge. Reading the other slots below them keeps a discarded echo to
+    // five persistent lookups instead of twelve. Free to do: all three gates only return, and
+    // everything with a side effect (the charge spend, ArmLaunch, the ReadyAt stamp) stays
+    // after them, so nothing observes the order.
+    declare Boolean[] LaunchGround for _Player = [];
+    if (LaunchGround[Index] && !_Player.IsTouchingGround) {
+        return;
+    }
+    declare Integer[] LaunchReadyAt for _Player = [];
+    if (Now < LaunchReadyAt[Index]) {
+        return;
+    }
+    // Which instance fires this launch (see C_LaunchFireOnPadSlot): the shared pad slot by
+    // default, the key's own slot otherwise. Needed here rather than at the ArmLaunch call
+    // because the instance being free is a gate like the two above — and one that must reject
+    // in front of every side effect, so a press the slot cannot take yet neither eats a charge
+    // nor stamps a cooldown. The key echoes again next tick, so the launch simply goes out on
+    // the first tick the slot can take it.
+    declare FireSlot = _Key;
+    if (Constants::C_LaunchFireOnPadSlot) {
+        FireSlot = 0;
+    }
+    if (!LaunchSlotReady(_Player, FireSlot)) {
+        return;
+    }
 
     declare Integer[] LaunchUp for _Player = [];
     declare Integer[] LaunchDown for _Player = [];
@@ -1489,20 +1625,10 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
     declare Integer[] LaunchDir for _Player = [];
     declare Integer[] LaunchFrame for _Player = [];
     declare Integer[] LaunchCooldown for _Player = [];
-    declare Boolean[] LaunchGround for _Player = [];
-    declare Integer[] LaunchReadyAt for _Player = [];
     declare Integer[] LaunchAmount for _Player = [];
     declare Integer[] LaunchGain for _Player = [];
     declare Integer[] LaunchCharges for _Player = [];
     declare Integer[] LaunchChargeAt for _Player = [];
-    declare Index = _Key - 1;
-
-    if (LaunchGround[Index] && !_Player.IsTouchingGround) {
-        return;
-    }
-    if (Now < LaunchReadyAt[Index]) {
-        return;
-    }
 
     // Policy: optionally suppress the down blast when an up blast fires too
     declare DownStrength = Tools::LaunchDownStrength(LaunchUp[Index], LaunchDown[Index]);
@@ -1530,12 +1656,6 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
     // Encoding v4 and the frame's own direction calibration, both in LaunchVariant
     declare ArmedVariant = LaunchVariant(LaunchFrame[Index],
         LaunchUp[Index], LaunchDown[Index], LaunchDir[Index], LaunchSide[Index]);
-    // Fire through the pad slot by default (see C_LaunchFireOnPadSlot): a key launch is the
-    // same launch a pad fires, so the key slots only need to carry the bind.
-    declare FireSlot = _Key;
-    if (Constants::C_LaunchFireOnPadSlot) {
-        FireSlot = 0;
-    }
     ArmLaunch(_Player, FireSlot, ArmedVariant);
     LaunchReadyAt[Index] = Now + LaunchCooldown[Index];
 }
