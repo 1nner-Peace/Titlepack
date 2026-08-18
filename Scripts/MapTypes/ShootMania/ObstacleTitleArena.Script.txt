@@ -321,19 +321,19 @@ Text PlusMinus(Text _Position, Text _Content, Text _Selector)
 // control ids are disjoint by construction (Select8's ids are its option words, Select8Arrows'
 // are C_LaunchDirIdPrefix ^ index), so the hidden bar cannot shadow the visible one.
 //
-// The block is ~26 tall; the caller must leave that much room before the next row.
+// The block is ~24 tall; the caller must leave that much room before the next row.
 Text DirectionBlock(Text _Position)
 {
-    declare Compass = Select8("0 -21", "N", "NE", "E", "SE", "S", "SW", "W", "NW", "Compass_Selector");
-    declare Arrows = Select8Arrows("0 -21", C_LaunchDirIdPrefix, "Launch_Dir_Selector");
+    declare Compass = Select8("0 -18.5", "N", "NE", "E", "SE", "S", "SW", "W", "NW", "Compass_Selector");
+    declare Arrows = Select8Arrows("0 -18.5", C_LaunchDirIdPrefix, "Launch_Dir_Selector");
     // The picker's slots are the frames in their own order, so a slot's index is the value it
     // stands for — which is what lets DirectionBlockCases below walk the same list.
     declare Names = Constants::C_LaunchFrameNames;
-    declare FramePicker = Select3("0 -11", Names[Constants::C_LaunchFrameWorld],
+    declare FramePicker = Select3("0 -8.5", Names[Constants::C_LaunchFrameWorld],
         Names[Constants::C_LaunchFrameOrientation], Names[Constants::C_LaunchFrameMovement],
         "Frame_Selector");
     return BigProperty(_Position, "Direction", """
-        <label pos="0 -6" size="40 5" text="Relative to:" textsize="2"
+        <label pos="0 -5.5" size="40 5" text="Relative to:" textsize="2"
             class="text" halign="center" valign="center2"/>
         {{{FramePicker}}}
         <frame id="Frame_DirCompass">
@@ -2010,16 +2010,18 @@ Void EditLaunchAbility(CAnchorData _Anchor, Integer _Key)
             {{{InlineProperty("10 -27.5", "Downward", PlusMinus("7 1.25", "+", "DownPlus") ^ PlusMinus("7 -1.25", "-", "DownMinus") ^ Entry("-1 0", "Entry_LaunchDown"))}}}
             {{{InlineProperty("10 -35.5", "Horizontal", PlusMinus("7 1.25", "+", "SidePlus") ^ PlusMinus("7 -1.25", "-", "SideMinus") ^ Entry("-1 0", "Entry_LaunchSide"))}}}
             {{{DirectionBlock("0 -46")}}}
-            <!-- Charges: the weapon block's own four controls, at the same offsets the weapon
-                 frame uses in EditCheckpoint, so both read identically. Amount 0 = unlimited. -->
-            {{{Property("-12 -77", "Gain (0-1000%)", Entry("0 -5.5", "Entry_LaunchGain"))}}}
-            {{{Property("12 -77", "Amount (0-10)", Entry("0 -5.5", "Entry_LaunchAmount"))}}}
-            {{{Property("-15 -90", "Refill", Checkbox("10 0", "Checkbox_Fill_Launch"))}}}
-            {{{Property("7.5 -90", "Empty", Checkbox("10 0", "Checkbox_Empty_Launch"))}}}
-            {{{BigProperty("0 -103", "Cooldown", Entry("0 -6", "Entry_LaunchCooldown"))}}}
-            <label pos="13 -109" size="10 4" text="ms" textsize="1" class="text" halign="left" valign="center2"/>
-            <label pos="-3 -117" size="52 5" text="Only when touching ground" textsize="2" class="text" halign="center" valign="center2"/>
-            {{{Checkbox("21 -117", "Checkbox_LaunchGround")}}}
+            <!-- Charges: the weapon block's own controls plus the cooldown, all written as the
+                 same title-over-entry Property the weapon frame uses in EditCheckpoint, so the
+                 three read as one row. Amount 0 = unlimited. -->
+            {{{BigProperty("0 -78", "Charges", "")}}}
+            {{{Property("-25 -84.5", "Gain (0-1000%)", Entry("0 -5.5", "Entry_LaunchGain"))}}}
+            {{{Property("0 -84.5", "Amount (0-10)", Entry("0 -5.5", "Entry_LaunchAmount"))}}}
+            {{{Property("25 -84.5", "Cooldown (ms)", Entry("0 -5.5", "Entry_LaunchCooldown"))}}}
+            {{{Property("-15 -97.5", "Refill", Checkbox("10 0", "Checkbox_Fill_Launch"))}}}
+            {{{Property("7.5 -97.5", "Empty", Checkbox("10 0", "Checkbox_Empty_Launch"))}}}
+            {{{BigProperty("0 -108", "Options", "")}}}
+            <label pos="-3 -114.5" size="52 5" text="Only when touching ground" textsize="2" class="text" halign="center" valign="center2"/>
+            {{{Checkbox("21 -114.5", "Checkbox_LaunchGround")}}}
         </frame>
     """;
 
@@ -2373,8 +2375,8 @@ Void EditTrampolineItem(CAnchorData _Item)
 
     /// --- Manialink
     // Same layout as the launch ability page (see EditLaunchAbility), minus its enable row and
-    // with the pad's own delay under the ground option, and the same shared direction block: a
-    // pad picks its frame exactly the way a key does.
+    // with the pad's own delay standing in for the two charge fields a key has, and the same
+    // shared direction block: a pad picks its frame exactly the way a key does.
     declare Properties = """
         <frame id="Basic" pos="0 25">
             {{{BigProperty("0 -3", "Strength", "")}}}
@@ -2382,12 +2384,12 @@ Void EditTrampolineItem(CAnchorData _Item)
             {{{InlineProperty("10 -17.5", "Downward", PlusMinus("7 1.25", "+", "DownPlus") ^ PlusMinus("7 -1.25", "-", "DownMinus") ^ Entry("-1 0", "Entry_TrampDown"))}}}
             {{{InlineProperty("10 -25.5", "Horizontal", PlusMinus("7 1.25", "+", "HorizPlus") ^ PlusMinus("7 -1.25", "-", "HorizMinus") ^ Entry("-1 0", "Entry_TrampHoriz"))}}}
             {{{DirectionBlock("0 -36")}}}
-            {{{BigProperty("0 -70", "Cooldown", Entry("0 -6", "Entry_TrampCooldown"))}}}
-            <label pos="13 -76" size="10 4" text="ms" textsize="1" class="text" halign="left" valign="center2"/>
-            <label pos="-3 -84" size="52 5" text="Only when touching ground" textsize="2" class="text" halign="center" valign="center2"/>
-            {{{Checkbox("21 -84", "Checkbox_TrampWaitGround")}}}
-            {{{BigProperty("0 -94", "Delay", Entry("0 -6", "Entry_TrampDelay"))}}}
-            <label pos="13 -100" size="10 4" text="ms" textsize="1" class="text" halign="left" valign="center2"/>
+            {{{BigProperty("0 -68", "Charges", "")}}}
+            {{{Property("-12 -74.5", "Cooldown (ms)", Entry("0 -5.5", "Entry_TrampCooldown"))}}}
+            {{{Property("12 -74.5", "Delay (ms)", Entry("0 -5.5", "Entry_TrampDelay"))}}}
+            {{{BigProperty("0 -90.5", "Options", "")}}}
+            <label pos="-3 -97" size="52 5" text="Only when touching ground" textsize="2" class="text" halign="center" valign="center2"/>
+            {{{Checkbox("21 -97", "Checkbox_TrampWaitGround")}}}
         </frame>
     """;
 
