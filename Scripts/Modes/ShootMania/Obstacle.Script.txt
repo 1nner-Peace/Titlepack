@@ -1597,12 +1597,16 @@ Void TryLaunchOnKey(CSmPlayer _Player, Integer _Key) {
     // five persistent lookups instead of twelve. Free to do: all three gates only return, and
     // everything with a side effect (the charge spend, ArmLaunch, the ReadyAt stamp) stays
     // after them, so nothing observes the order.
-    declare Boolean[] LaunchGround for _Player = [];
-    if (LaunchGround[Index] && !_Player.IsTouchingGround) {
-        return;
-    }
+    //
+    // Cooldown leads the three because it is the gate that does the rejecting. Ground-gating is
+    // the rare configuration, so on a key that does not use it the slot below never decides
+    // anything, and putting the cooldown first means a discarded echo does not read it at all.
     declare Integer[] LaunchReadyAt for _Player = [];
     if (Now < LaunchReadyAt[Index]) {
+        return;
+    }
+    declare Boolean[] LaunchGround for _Player = [];
+    if (LaunchGround[Index] && !_Player.IsTouchingGround) {
         return;
     }
     // Which instance fires this launch (see C_LaunchFireOnPadSlot): the shared pad slot by
