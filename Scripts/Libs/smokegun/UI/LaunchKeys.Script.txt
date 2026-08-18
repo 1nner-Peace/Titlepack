@@ -94,7 +94,7 @@ Void PublishConfig(CSmPlayer _Player) {
             // that makes the launch come out the way the picker drew it.
             Entry.Dir = LaunchDir[Index];
             // What that direction is measured against (C_LaunchFrame*). The strip draws the same
-            // arrow whichever frame it is, and hangs a symbol off it saying what the arrow is
+            // arrow whichever frame it is, and stands a symbol before it saying what the arrow is
             // measured against — so the frame has to travel alongside the direction.
             if (LaunchFrame.count > Index) {
                 Entry.Frame = LaunchFrame[Index];
@@ -183,7 +183,7 @@ Void PublishCharges(CSmPlayer _Player) {
  * the window the bar that is currently filling spans, and what a press of that key does.
  *
  * A row is one line. The strip on the right says how many launches are left; standing left of it
- * is what one of them is made of — upward, downward and horizontal strength as a digit and the
+ * is what one of them is made of — horizontal, upward and downward strength as a digit and the
  * arrow it belongs to, with the horizontal one's arrow turned to the direction the launch takes. A
  * strength of 0 draws nothing, so the usual row (upward only) is one digit and one arrow, and the
  * items that are
@@ -195,12 +195,12 @@ Void PublishCharges(CSmPlayer _Player) {
  * to" picker — because the same arrow means three different things depending on it. The arrow is
  * drawn the same way in all three, always the direction the editor's picker drew: up is straight
  * ahead in the two player-relative frames and north in the world one, and every step from there
- * turns it another 45 deg clockwise. What tells the three apart is the symbol hung off the arrow —
- * an azure compass for the world, a coral camera for the aim, a turquoise runner for the travel
- * direction — and every frame that is on screen spells itself out in a legend line under the block,
- * once per frame however many keys use it, in the symbol's own colour. A single white "Rel. to:"
- * stands against the first of those lines and does for all of them: a symbol is a reminder, not an
- * explanation, and the strip has no room to explain itself four times over.
+ * turns it another 45 deg clockwise. What tells the three apart is the symbol standing in front of
+ * the strength — an azure compass for the world, a coral camera for the aim, a turquoise runner for
+ * the travel direction — and every frame that is on screen spells itself out in a legend line under
+ * the block, once per frame however many keys use it, in the symbol's own colour. A single white
+ * "Rel. to:" stands against the first of those lines and does for all of them: a symbol is a
+ * reminder, not an explanation, and the strip has no room to explain itself four times over.
  *
  * Nothing here stands on a card: the strengths, the arrows and the legend draw straight over the
  * scene, next to bars that are the native gauge's own picture and carry its background.
@@ -223,8 +223,8 @@ Void PublishCharges(CSmPlayer _Player) {
  * has to cover the row slots the page script lays out.
  */
 // One item of the strengths block: the strength as a digit, and the arrow it belongs to right of
-// it. The item's origin is its own left edge — which the digit sits flush against — so packing the
-// items that are drawn is a matter of handing each one an X.
+// it. The item's origin is its own left edge — which whatever it draws first sits flush against —
+// so packing the items that are drawn is a matter of handing each one an X.
 //
 // The arrow is a titlepack image rather than an arrow character: the fonts have no diagonal arrow.
 // The image is white, and the tint comes from modulatecolor rather than colorize — colorize
@@ -235,17 +235,24 @@ Void PublishCharges(CSmPlayer _Player) {
 // rather than to the quad — a rotated control spins around its position anchor, while a frame
 // spins around its own origin, which the centred quad sits exactly on.
 //
-// Emitted top down, because an earlier quad draws over a later one: the digit, the arrow, then
-// whatever the caller hangs off it. _Extra is the horizontal item's frame indicator and nothing
-// else draws one, so the item is otherwise the same three ways over.
-Text InfoItem(Text _Name, Text _Rot, Text _Arrow, Text _Extra) {
+// _Lead is what stands in front of the digit — the horizontal item's frame indicator, and nothing
+// else draws one, so the item is otherwise the same three ways over — and _LeadX is the room it
+// takes. The digit and the arrow are wrapped in a frame starting there rather than offset one by
+// one, so the pair keeps the spacing it has whether or not anything stands in front of it.
+//
+// Emitted top down, because an earlier quad draws over a later one: the digit, the arrow, then the
+// lead, whose styled quad carries a box far wider than the symbol drawn inside it and would
+// otherwise cover the digit standing next to it.
+Text InfoItem(Text _Name, Text _Rot, Text _Arrow, Text _LeadX, Text _Lead) {
     return """
         <frame id="Frame_Item{{{_Name}}}" pos="0 0" hidden="1">
+            <frame pos="{{{_LeadX}}} 0">
             <label id="Label_Item{{{_Name}}}" pos="1 0" size="3 3" text="0" textsize="1.1" textfont="OswaldMono" textcolor="F4F4F4" halign="left" valign="center2" opacity="1.0"/>
             <frame id="Frame_Rot{{{_Name}}}" pos="4.7 0" rot="{{{_Rot}}}">
-            <quad pos="0 0" size="4.3 4.3" halign="center" valign="center" keepratio="Fit" image="file://Media/Images/Obstacle/Interface/{{{_Arrow}}}" modulatecolor="FBFBFB"/>
+            <quad pos="0 0" size="4.3 4.3" halign="center" valign="center" keepratio="Fit" image="file://Media/Images/Obstacle/Interface/{{{_Arrow}}}" modulatecolor="FAFAFA"/>
             </frame>
-            {{{_Extra}}}
+            </frame>
+            {{{_Lead}}}
         </frame>
     """;
 }
@@ -267,10 +274,13 @@ Text GetLayer() {
     // The three are a cool/warm/cyan triad rather than three neighbours, so a glyph the size of a
     // digit is still told apart at a glance, and all three are kept bright: they draw straight over
     // the scene, with no card behind them to hold them up against a white sky.
-    declare ColourWorldHex = "61B5FF";
-    declare ColourOrientationHex = "FF9366";
+    declare ColourWorldHex = "ffa2e5";
+    declare ColourOrientationHex = "fff27e";
     declare ColourMovementHex = "4BFFEC";
 
+    // declare ColourWorldHex = "61B5FF";
+    // declare ColourOrientationHex = "FF9366";
+    // declare ColourMovementHex = "4BFFEC";
     // Drag handle for the F8 UI editor, sized for the widest and tallest the block can get rather
     // than for what it happens to draw. The rows run up from C_BaseY (-79) and the legend down from
     // it, so vertically it spans all three legend lines (-79 - 3 * 3.6 = -89.8, minus the 2.35 a
@@ -305,27 +315,32 @@ Text GetLayer() {
         """;
     }
 
-    // What the horizontal item hangs off its arrow: the symbol naming the frame the direction is
-    // measured in. Both are hidden by default and the page script shows the one the key's frame
-    // calls for, so the item is one control wide whichever frame that is:
+    // What the horizontal item stands in front of its strength: the symbol naming the frame the
+    // direction is measured in. Both are hidden by default and the page script shows the one the
+    // key's frame calls for, so the item is one control wide whichever frame that is:
     //  - the frame symbol, one label doing for both the compass and the camera glyph since a key
     //    is only ever in one frame at a time — which is why its text and colour are the page
     //    script's to set and the markup leaves them empty;
     //  - the runner, a quad rather than a glyph because it is a button style and not a character.
     //    Style textures take colorize, not modulatecolor, and it never changes, so it is tinted
     //    here rather than at draw time.
-    declare SideExtra = """
-            <label id="Label_FrameSide" pos="9.4 0" size="3.2 3.2" text="" textsize="2.2" halign="center" valign="center2" opacity="1.0" hidden="1"/>
-            <quad id="Quad_FrameSide" pos="9.4 0" size="8.5 8.5" halign="center" valign="center" keepratio="Fit" style="UIConstruction_Buttons" substyle="ActionMaker" colorize="{{{ColourMovementHex}}}" hidden="1"/>
+    declare SideSymbol = """
+            <label id="Label_FrameSide" pos="3.3 0" size="3.2 3.2" text="" textsize="2.2" halign="center" valign="center2" opacity="1.0" hidden="1"/>
+            <quad id="Quad_FrameSide" pos="3.3 0" size="8.5 8.5" halign="center" valign="center" keepratio="Fit" style="UIConstruction_Buttons" substyle="ActionMaker" colorize="{{{ColourMovementHex}}}" hidden="1"/>
     """;
 
-    // The strengths line. The two vertical arrows are fixed quarter turns; the horizontal one is
+    // The strengths line, in the order the page script packs them: the horizontal push first, then
+    // the two vertical ones. The two vertical arrows are fixed quarter turns; the horizontal one is
     // turned by the page script to the direction the launch takes, and reads as a compass rather
     // than a third vertical arrow because of the ring it is drawn in and its own colour — a launch
     // straight ahead points its arrow up, exactly where the upward arrow points.
-    declare InfoItems = InfoItem("Up", "0", "arrow-square.png", "")
-        ^ InfoItem("Down", "180", "arrow-square.png", "")
-        ^ InfoItem("Side", "0", "arrow-circle.png", SideExtra);
+    //
+    // The symbol is 4.4 across and sits flush against the horizontal item's left edge, so its digit
+    // and arrow start 4.75 in: 0.35 of air past the symbol, on top of the 1.0 every item insets its
+    // digit by — which leaves the item ending exactly where C_InfoSideWidth expects it to.
+    declare InfoItems = InfoItem("Side", "0", "arrow-circle.png", "4.75", SideSymbol)
+        ^ InfoItem("Up", "0", "arrow-square.png", "0", "")
+        ^ InfoItem("Down", "180", "arrow-square.png", "0", "");
 
     declare Rows = "";
     for (Row, 0, KeyCount - 1) {
@@ -405,12 +420,12 @@ Text GetLayer() {
     // the digit.
     #Const C_InfoItemWidth 8.0
     #Const C_InfoGap 0.3
-    #Const C_InfoItemNames ["Up", "Down", "Side"]
+    #Const C_InfoItemNames ["Side", "Up", "Down"]
     #Const C_InfoItemCount 3
-    #Const C_InfoItemSide 2	// where the horizontal strength sits in the list above
+    #Const C_InfoItemSide 0	// where the horizontal strength sits in the list above
     // The horizontal item is the wider one: whichever frame it is in, it carries a third control
-    // (the frame symbol, centred on 8.9 and 4.4 across) after the two every item has. Its slot
-    // keeps the same 1.15 of slack past its last control that C_InfoItemWidth leaves past the
+    // (the frame symbol, centred on 2.2 and 4.4 across) in front of the two every item has. Its
+    // slot keeps the same 1.15 of slack past its last control that C_InfoItemWidth leaves past the
     // arrow, so the two widths pack against one another evenly.
     #Const C_InfoSideWidth 12.8
 
@@ -756,14 +771,14 @@ Text GetLayer() {
                     // 0 draws nothing at all — the horizontal one because its direction means
                     // nothing without a push behind it, the vertical ones because the usual key
                     // only launches upward and a row of zeroes would be noise.
-                    declare Integer[] Strengths = [KeyHud.Up, KeyHud.Down, KeyHud.Side];	// in C_InfoItemNames' order
+                    declare Integer[] Strengths = [KeyHud.Side, KeyHud.Up, KeyHud.Down];	// in C_InfoItemNames' order
 
                     // How wide the items this row actually draws are, all told — one item on the
                     // usual row, three on a key that pushes every way at once, and the horizontal
                     // one wider than the other two because of the frame symbol it carries. The
                     // block is laid out left of the strip and the loop below packs the drawn items
                     // rightwards from ItemX, so this one value decides where the block starts.
-                    declare Real[] ItemWidths = [C_InfoItemWidth, C_InfoItemWidth, C_InfoSideWidth];
+                    declare Real[] ItemWidths = [C_InfoSideWidth, C_InfoItemWidth, C_InfoItemWidth];
                     declare BlockWidth = 0.;
                     foreach (Slot => Strength in Strengths) {
                         if (Strength > 0) {
@@ -802,7 +817,7 @@ Text GetLayer() {
                     // player-relative frames, north in the world one — and every step from there
                     // turns it another 45 deg clockwise. The icon points up as it stands, so the
                     // step is the whole of the turn, and what the arrow is measured against is left
-                    // to the symbol hung off it.
+                    // to the symbol standing in front of the strength.
                     declare KeyFrame = KeyHud.Frame;
                     declare SideDir = KeyHud.Dir;
 
