@@ -295,6 +295,20 @@ Text InlineProperty(Text _Position, Text _Title, Text _Content)
     """;
 }
 
+// Property whose title needs more room than Property's 20 gives it — a whole sentence rather than
+// a field name, so the content sits beside it on the same row instead of under it. _Position is
+// the row centre line, as with InlineProperty.
+Text WideProperty(Text _Position, Text _Title, Text _Content)
+{
+    return """
+        <frame pos="{{{_Position}}}">
+            <label pos="-3 0" size="52 5" text="{{{_Title}}}" textsize="2"
+                class="text" halign="center" valign="center2"/>
+            {{{_Content}}}
+        </frame>
+    """;
+}
+
 Text BigProperty(Text _Position, Text _Title, Text _Content)
 {
     return """
@@ -2020,8 +2034,7 @@ Void EditLaunchAbility(CAnchorData _Anchor, Integer _Key)
             {{{Property("-15 -97.5", "Refill", Checkbox("10 0", "Checkbox_Fill_Launch"))}}}
             {{{Property("7.5 -97.5", "Empty", Checkbox("10 0", "Checkbox_Empty_Launch"))}}}
             {{{BigProperty("0 -108", "Options", "")}}}
-            <label pos="-3 -114.5" size="52 5" text="Only when touching ground" textsize="2" class="text" halign="center" valign="center2"/>
-            {{{Checkbox("21 -114.5", "Checkbox_LaunchGround")}}}
+            {{{WideProperty("0 -114.5", "Only when touching ground", Checkbox("21 0", "Checkbox_LaunchGround"))}}}
         </frame>
     """;
 
@@ -2388,8 +2401,7 @@ Void EditTrampolineItem(CAnchorData _Item)
             {{{Property("-12 -74.5", "Cooldown (ms)", Entry("0 -5.5", "Entry_TrampCooldown"))}}}
             {{{Property("12 -74.5", "Delay (ms)", Entry("0 -5.5", "Entry_TrampDelay"))}}}
             {{{BigProperty("0 -90.5", "Options", "")}}}
-            <label pos="-3 -97" size="52 5" text="Only when touching ground" textsize="2" class="text" halign="center" valign="center2"/>
-            {{{Checkbox("21 -97", "Checkbox_TrampWaitGround")}}}
+            {{{WideProperty("0 -97", "Only when touching ground", Checkbox("21 0", "Checkbox_TrampWaitGround"))}}}
         </frame>
     """;
 

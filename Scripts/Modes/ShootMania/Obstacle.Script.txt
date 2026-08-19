@@ -1402,8 +1402,10 @@ Void TickLaunchKeys(CSmPlayer _Player) {
 // longer than the per-key arrays above. LaunchSlotArmedAt is the Now a launch was handed to the
 // slot (0 = nothing waiting on a fire echo); LaunchSlotRearmPass is the first loop pass on which
 // it may be armed again. Together they keep one instance to one launch at a time — the rule
-// C_LaunchSlotRearmPasses spells out. Called by everything that WRITES those arrays; the read
-// side (LaunchSlotReady) treats a short array as "free" instead, so it stays cheap.
+// C_LaunchSlotRearmPasses spells out — and they are the whole record of it: what is outstanding,
+// and in what order, is read back off the arm stamps rather than tracked a second time. Called
+// before any indexed write; the paths that only read or only clear (LaunchSlotReady,
+// ClearLaunchSlotState) take a short array as "free" instead, so they stay cheap.
 Void EnsureLaunchSlotState(CSmPlayer _Player) {
     declare Integer[] LaunchSlotArmedAt for _Player = [];
     declare Integer[] LaunchSlotRearmPass for _Player = [];
@@ -1423,16 +1425,33 @@ Void EnsureLaunchSlotState(CSmPlayer _Player) {
 // replaced: a fresh one is disarmed with its fire latch already clear, so it can take a launch
 // immediately. _SlotIndex < 0 clears every slot.
 Void ClearLaunchSlotState(CSmPlayer _Player, Integer _SlotIndex) {
+    declare Integer[] LaunchSlotArmedAt for _Player = [];
+    declare Integer[] LaunchSlotRearmPass for _Player = [];
+    // Empty already means what clearing means: LaunchSlotReady reads a short array as "nothing
+    // armed, nothing waiting out a disarm", and EnsureLaunchSlotState sizes them again on the next
+    // arm. So every slot at once is dropping the arrays, and one slot of an array that was never
+    // sized is already clear.
+    if (_SlotIndex < 0) {
+        LaunchSlotArmedAt = [];
+        LaunchSlotRearmPass = [];
+    } else if (LaunchSlotArmedAt.count > _SlotIndex && LaunchSlotRearmPass.count > _SlotIndex) {
+        LaunchSlotArmedAt[_SlotIndex] = 0;
+        LaunchSlotRearmPass[_SlotIndex] = 0;
+    }
+}
+
+// Hand a fire slot back: forget the launch it was holding, then keep it shut for a pass so the
+// action gets a read of its own on that 0 before anything arms over it. Skipping the hold is what
+// silenced the action under rapid fire; C_LaunchSlotRearmPasses has the full story. Both ways a
+// launch can end — the fire echo and the lost-echo timeout — resolve the slot through here, which
+// is what keeps the two paths from drifting apart.
+Void ReleaseLaunchSlot(CSmPlayer _Player, Integer _SlotIndex) {
     EnsureLaunchSlotState(_Player);
     declare Integer[] LaunchSlotArmedAt for _Player = [];
     declare Integer[] LaunchSlotRearmPass for _Player = [];
-    for (Slot, 0, Constants::C_LaunchKeyCount) {
-        if (_SlotIndex >= 0 && Slot != _SlotIndex) {
-            continue;
-        }
-        LaunchSlotArmedAt[Slot] = 0;
-        LaunchSlotRearmPass[Slot] = 0;
-    }
+    LaunchSlotArmedAt[_SlotIndex] = 0;
+    LaunchSlotRearmPass[_SlotIndex] = G_LaunchLoopPass + Constants::C_LaunchSlotRearmPasses;
+    ActionSetVariant(_Player, LaunchSlot(_SlotIndex), 0);
 }
 
 // May this fire slot be handed a launch right now? Both halves of the answer are about the one
@@ -1458,9 +1477,7 @@ Boolean LaunchSlotReady(CSmPlayer _Player, Integer _SlotIndex) {
         // would instead of merely releasing the slot: if the action did fire and only the echo
         // went missing, its latch is still set, and nothing but a zeroed pass of its own clears
         // that — release alone would arm straight back over the 0 and wedge the instance.
-        LaunchSlotArmedAt[_SlotIndex] = 0;
-        LaunchSlotRearmPass[_SlotIndex] = G_LaunchLoopPass + Constants::C_LaunchSlotRearmPasses;
-        ActionSetVariant(_Player, LaunchSlot(_SlotIndex), 0);
+        ReleaseLaunchSlot(_Player, _SlotIndex);
         return False;
     }
     // Disarmed, but the action has not necessarily read that 0 back yet — and until it does, its
@@ -1513,9 +1530,7 @@ Void ApplyLaunchBinds(CSmPlayer _Player) {
 // spawn corrupts it whether or not any launch key is involved.
 Void LoadLaunchActions(CSmPlayer _Player) {
     declare Boolean[] LaunchBound for _Player = [];
-    declare Integer[] LaunchArmedSlots for _Player = [];
     LaunchBound = [False, False, False, False];
-    LaunchArmedSlots = [];
     // Fresh instances: nothing armed in them and no fire latch to wait out
     ClearLaunchSlotState(_Player, -1);
     LoadTrampolineAction(_Player);
@@ -1546,9 +1561,6 @@ Void ArmLaunch(CSmPlayer _Player, Integer _SlotIndex, Integer _Variant) {
     OpenLaunchPvPWindow();
     G_TrampolinePvPInFlight += 1;
 
-    declare Integer[] LaunchArmedSlots for _Player = [];
-    LaunchArmedSlots.add(_SlotIndex);
-
     EnsureLaunchSlotState(_Player);
     declare Integer[] LaunchSlotArmedAt for _Player = [];
     LaunchSlotArmedAt[_SlotIndex] = Now;	// busy until the fire echo comes back (or the timeout)
@@ -1556,25 +1568,21 @@ Void ArmLaunch(CSmPlayer _Player, Integer _SlotIndex, Integer _Variant) {
     ActionSetVariant(_Player, LaunchSlot(_SlotIndex), _Variant);
 }
 
-// A fire echo resolves the oldest armed slot (launches fire in the order they were armed).
-// Falling back to the pad slot keeps an echo with nothing queued harmless.
+// A fire echo resolves the oldest armed slot (launches fire in the order they were armed), which
+// is the smallest arm stamp: one launch to a slot at a time means a slot is waiting on at most one
+// echo, so the stamps alone order what is outstanding. Falling back to the pad slot keeps an echo
+// with nothing armed harmless.
 Void DisarmLaunch(CSmPlayer _Player) {
-    declare Integer[] LaunchArmedSlots for _Player = [];
-    declare SlotIndex = 0;
-    if (LaunchArmedSlots.count > 0) {
-        SlotIndex = LaunchArmedSlots[0];
-        LaunchArmedSlots.removekey(0);
-    }
-
-    EnsureLaunchSlotState(_Player);
     declare Integer[] LaunchSlotArmedAt for _Player = [];
-    declare Integer[] LaunchSlotRearmPass for _Player = [];
-    LaunchSlotArmedAt[SlotIndex] = 0;
-    // Hold the slot for a pass so the action gets a read of its own on this 0. Skipping that is
-    // what silenced the action under rapid fire; C_LaunchSlotRearmPasses has the full story.
-    LaunchSlotRearmPass[SlotIndex] = G_LaunchLoopPass + Constants::C_LaunchSlotRearmPasses;
-
-    ActionSetVariant(_Player, LaunchSlot(SlotIndex), 0);
+    declare SlotIndex = 0;
+    declare ArmedAt = 0;
+    foreach (Slot => Stamp in LaunchSlotArmedAt) {
+        if (Stamp > 0 && (ArmedAt == 0 || Stamp < ArmedAt)) {
+            SlotIndex = Slot;
+            ArmedAt = Stamp;
+        }
+    }
+    ReleaseLaunchSlot(_Player, SlotIndex);
 }
 
 // A granted key was pressed: check the section's gates, then arm that key's slot exactly the

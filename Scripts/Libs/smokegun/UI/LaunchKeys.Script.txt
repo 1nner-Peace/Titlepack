@@ -247,10 +247,10 @@ Text InfoItem(Text _Name, Text _Rot, Text _Arrow, Text _LeadX, Text _Lead) {
     return """
         <frame id="Frame_Item{{{_Name}}}" pos="0 0" hidden="1">
             <frame pos="{{{_LeadX}}} 0">
-            <label id="Label_Item{{{_Name}}}" pos="1 0" size="3 3" text="0" textsize="1.1" textfont="OswaldMono" textcolor="F4F4F4" halign="left" valign="center2" opacity="1.0"/>
-            <frame id="Frame_Rot{{{_Name}}}" pos="4.7 0" rot="{{{_Rot}}}">
-            <quad pos="0 0" size="4.3 4.3" halign="center" valign="center" keepratio="Fit" image="file://Media/Images/Obstacle/Interface/{{{_Arrow}}}" modulatecolor="FAFAFA"/>
-            </frame>
+                <label id="Label_Item{{{_Name}}}" pos="1 0" size="3 3" text="0" textsize="1.1" textfont="OswaldMono" textcolor="F4F4F4" halign="left" valign="center2" opacity="1.0"/>
+                <frame id="Frame_Rot{{{_Name}}}" pos="4.7 0" rot="{{{_Rot}}}">
+                    <quad pos="0 0" size="4.3 4.3" halign="center" valign="center" keepratio="Fit" image="file://Media/Images/Obstacle/Interface/{{{_Arrow}}}" modulatecolor="FAFAFA"/>
+                </frame>
             </frame>
             {{{_Lead}}}
         </frame>
@@ -271,16 +271,13 @@ Text GetLayer() {
     // when it switches between them — derives it with CL::HexToRgb rather than carrying a second
     // spelling that could drift from this one.
     //
-    // The three are a cool/warm/cyan triad rather than three neighbours, so a glyph the size of a
-    // digit is still told apart at a glance, and all three are kept bright: they draw straight over
-    // the scene, with no card behind them to hold them up against a white sky.
-    declare ColourWorldHex = "ffa2e5";
-    declare ColourOrientationHex = "fff27e";
+    // The three are widely separated hues — pink, yellow, cyan — rather than three neighbours, so a
+    // glyph the size of a digit is still told apart at a glance, and all three are kept bright: they
+    // draw straight over the scene, with no card behind them to hold them up against a white sky.
+    declare ColourWorldHex = "FFA2E5";
+    declare ColourOrientationHex = "FFF27E";
     declare ColourMovementHex = "4BFFEC";
 
-    // declare ColourWorldHex = "61B5FF";
-    // declare ColourOrientationHex = "FF9366";
-    // declare ColourMovementHex = "4BFFEC";
     // Drag handle for the F8 UI editor, sized for the widest and tallest the block can get rather
     // than for what it happens to draw. The rows run up from C_BaseY (-79) and the legend down from
     // it, so vertically it spans all three legend lines (-79 - 3 * 3.6 = -89.8, minus the 2.35 a
@@ -324,9 +321,17 @@ Text GetLayer() {
     //  - the runner, a quad rather than a glyph because it is a button style and not a character.
     //    Style textures take colorize, not modulatecolor, and it never changes, so it is tinted
     //    here rather than at draw time.
+    //
+    // The numbers that have to agree are named here rather than spelled out where each is used: the
+    // symbol is 4.4 across centred on SymbolX, SideLeadX is where the digit-and-arrow pair it stands
+    // in front of begins, and InfoItemWidth is what an ordinary item's slot measures — which is what
+    // lets the page script's C_InfoSideWidth below be derived instead of restated.
+    declare SymbolX = 3.3;
+    declare SideLeadX = 4.75;
+    declare InfoItemWidth = 8.0;
     declare SideSymbol = """
-            <label id="Label_FrameSide" pos="3.3 0" size="3.2 3.2" text="" textsize="2.2" halign="center" valign="center2" opacity="1.0" hidden="1"/>
-            <quad id="Quad_FrameSide" pos="3.3 0" size="8.5 8.5" halign="center" valign="center" keepratio="Fit" style="UIConstruction_Buttons" substyle="ActionMaker" colorize="{{{ColourMovementHex}}}" hidden="1"/>
+            <label id="Label_FrameSide" pos="{{{SymbolX}}} 0" size="3.2 3.2" text="" textsize="2.2" halign="center" valign="center2" opacity="1.0" hidden="1"/>
+            <quad id="Quad_FrameSide" pos="{{{SymbolX}}} 0" size="8.5 8.5" halign="center" valign="center" keepratio="Fit" style="UIConstruction_Buttons" substyle="ActionMaker" colorize="{{{ColourMovementHex}}}" hidden="1"/>
     """;
 
     // The strengths line, in the order the page script packs them: the horizontal push first, then
@@ -335,10 +340,11 @@ Text GetLayer() {
     // than a third vertical arrow because of the ring it is drawn in and its own colour — a launch
     // straight ahead points its arrow up, exactly where the upward arrow points.
     //
-    // The symbol is 4.4 across and sits flush against the horizontal item's left edge, so its digit
-    // and arrow start 4.75 in: 0.35 of air past the symbol, on top of the 1.0 every item insets its
-    // digit by — which leaves the item ending exactly where C_InfoSideWidth expects it to.
-    declare InfoItems = InfoItem("Side", "0", "arrow-circle.png", "4.75", SideSymbol)
+    // Centred on 3.3 and 4.4 across, the symbol spans 1.1 to 5.5. The digit and arrow start
+    // SideLeadX in and every item insets its digit a further 1.0, putting the digit at 5.75 — a
+    // quarter of air past the symbol. The slot the page script packs this item into is the ordinary
+    // item's width shifted right by the same SideLeadX, so the two stay in step by construction.
+    declare InfoItems = InfoItem("Side", "0", "arrow-circle.png", ""^SideLeadX, SideSymbol)
         ^ InfoItem("Up", "0", "arrow-square.png", "0", "")
         ^ InfoItem("Down", "180", "arrow-square.png", "0", "");
 
@@ -418,16 +424,16 @@ Text GetLayer() {
     // An item's slot is wider than the item, which stops about 1.4 short of the slot's right edge,
     // so C_InfoGap is the extra breathing room on top of that — measured from the slot, not from
     // the digit.
-    #Const C_InfoItemWidth 8.0
+    #Const C_InfoItemWidth {{{dump(InfoItemWidth)}}}
     #Const C_InfoGap 0.3
     #Const C_InfoItemNames ["Side", "Up", "Down"]
     #Const C_InfoItemCount 3
     #Const C_InfoItemSide 0	// where the horizontal strength sits in the list above
     // The horizontal item is the wider one: whichever frame it is in, it carries a third control
-    // (the frame symbol, centred on 2.2 and 4.4 across) in front of the two every item has. Its
-    // slot keeps the same 1.15 of slack past its last control that C_InfoItemWidth leaves past the
-    // arrow, so the two widths pack against one another evenly.
-    #Const C_InfoSideWidth 12.8
+    // (the frame symbol) in front of the two every item has. Its slot is therefore the ordinary
+    // item shifted right by exactly the room that symbol takes, which is the SideLeadX GetLayer
+    // laid the item out with — interpolated rather than restated so the two cannot drift.
+    #Const C_InfoSideWidth {{{dump(InfoItemWidth + SideLeadX)}}}
 
     // The frames a horizontal direction can be measured in, as the mode publishes them. Their
     // order is the picker's own, which is also the order the legend lists them in, so a player
@@ -461,6 +467,16 @@ Text GetLayer() {
     // The wire record, as declared for the lib half above. A page script cannot include, so it
     // takes a copy of the same source Structs.Script.txt compiles out there.
 {{{Structs::GetSLaunchKeyHudStruct()}}}
+
+    // How wide an item's slot is. Which one is the wide one is C_InfoItemSide's business rather
+    // than a hand-ordered list's: the horizontal item is the only one carrying a frame symbol in
+    // front of its digit, so it is the only slot that is not C_InfoItemWidth across.
+    Real SlotWidth(Integer _Slot) {
+        if (_Slot == C_InfoItemSide) {
+            return C_InfoSideWidth;
+        }
+        return C_InfoItemWidth;
+    }
 
     // Everything the layout below is built from, which is the whole record bar the fill window:
     // PartFrom / PartTo are read fresh every frame by the pass at the bottom of the loop, so a
@@ -778,11 +794,10 @@ Text GetLayer() {
                     // one wider than the other two because of the frame symbol it carries. The
                     // block is laid out left of the strip and the loop below packs the drawn items
                     // rightwards from ItemX, so this one value decides where the block starts.
-                    declare Real[] ItemWidths = [C_InfoSideWidth, C_InfoItemWidth, C_InfoItemWidth];
                     declare BlockWidth = 0.;
                     foreach (Slot => Strength in Strengths) {
                         if (Strength > 0) {
-                            BlockWidth += ItemWidths[Slot];
+                            BlockWidth += SlotWidth(Slot);
                         }
                     }
 
@@ -808,7 +823,7 @@ Text GetLayer() {
                         Frame_Item.Visible = True;
                         Frame_Item.RelativePosition_V3.X = ItemX;
                         Label_Item.Value = ""^Strengths[Item];
-                        ItemX += ItemWidths[Item];
+                        ItemX += SlotWidth(Item);
                     }
 
                     // What the horizontal push is aimed by, and where it goes. The direction digit
