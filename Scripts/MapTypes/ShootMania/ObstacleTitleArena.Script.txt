@@ -729,27 +729,26 @@ Integer[] LaunchMetaDefaults()
 
 /**
  * Launch settings of one key on one anchor, indexed by the launch field constants. Read out of
- * the anchor's single Meta_LaunchConfig array — see the layout note in Constants. Whatever the
- * stored array does not cover keeps its default: an anchor that was never configured, a key past
- * what was written, or a block saved before a field was added. So the mode reads exactly what the
- * editor would show, and adding a field costs one entry here rather than twelve declarations.
+ * the anchor's single Meta_LaunchConfig array — see the layout note in Constants. A key whose
+ * block the array does not reach keeps its defaults: an anchor that was never configured, or one
+ * saved before a field was appended. So the mode reads exactly what the editor would show, and
+ * adding a field costs one entry here rather than twelve declarations.
  */
 Integer[] LaunchMetaRead(CAnchorData _Anchor, Integer _Key)
 {
     declare metadata Integer[] Meta_LaunchConfig for _Anchor = [];
 
     declare Values = LaunchMetaDefaults();
-    if (_Key < 1 || _Key > Constants::C_LaunchKeyCount || Meta_LaunchConfig.count < 1) {
+    if (_Key < 1 || _Key > Constants::C_LaunchKeyCount) {
         return Values;
     }
 
-    declare Width = Meta_LaunchConfig[0];
-    declare Base = 1 + (_Key - 1) * Width;
-    if (Width < 1 || Meta_LaunchConfig.count < Base + Width) {
+    declare Base = (_Key - 1) * Constants::C_LaunchFieldCount;
+    if (Meta_LaunchConfig.count < Base + Constants::C_LaunchFieldCount) {
         return Values;
     }
 
-    for (Field, 0, ML::Min(Width, Constants::C_LaunchFieldCount) - 1) {
+    for (Field, 0, Constants::C_LaunchFieldCount - 1) {
         Values[Field] = Meta_LaunchConfig[Base + Field];
     }
 
@@ -789,8 +788,8 @@ Integer[] LaunchMetaClamp(Integer[] _Values)
 /**
  * One key's launch settings onto an anchor, into the single Meta_LaunchConfig array all four keys
  * share (layout in Constants). The array is rebuilt from what the anchor currently reads back
- * rather than patched in place: that widens a block saved before a field existed and fills in the
- * keys never configured, so writing one key can never leave another behind a short block.
+ * rather than patched in place: that fills in the keys never configured, so writing one key can
+ * never leave another behind a short array.
  */
 Void LaunchMetaWrite(CAnchorData _Anchor, Integer _Key, Integer[] _Values)
 {
@@ -801,7 +800,7 @@ Void LaunchMetaWrite(CAnchorData _Anchor, Integer _Key, Integer[] _Values)
     declare metadata Integer[] Meta_LaunchConfig for _Anchor = [];
     declare Clamped = LaunchMetaClamp(_Values);
 
-    declare Integer[] Config = [Constants::C_LaunchFieldCount];
+    declare Integer[] Config = [];
     for (Key, 1, Constants::C_LaunchKeyCount) {
         declare Values = LaunchMetaRead(_Anchor, Key);
         if (Key == _Key) {

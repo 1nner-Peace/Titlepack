@@ -1187,19 +1187,10 @@ Void InitLaunchCharges(CSmPlayer _Player, Boolean[] _PreviousOn, Integer[] _Prev
 Boolean MapHasLaunchKeys() {
     foreach (Landmark in MapLandmarks) {
         declare metadata Integer[] Meta_LaunchConfig for Landmark = [];
-        if (Meta_LaunchConfig.count < 1) {
-            continue;
-        }
 
-        // Only the On field of each key block is worth reading here. The width has to come out
-        // of the array rather than be assumed — see the layout note in Constants.
-        declare Width = Meta_LaunchConfig[0];
-        if (Width <= Constants::C_LaunchFieldOn) {
-            continue;
-        }
-
+        // Only the On field of each key block is worth reading here — layout note in Constants.
         for (Key, 1, Constants::C_LaunchKeyCount) {
-            declare Index = 1 + (Key - 1) * Width + Constants::C_LaunchFieldOn;
+            declare Index = (Key - 1) * Constants::C_LaunchFieldCount + Constants::C_LaunchFieldOn;
             if (Meta_LaunchConfig.count > Index && Meta_LaunchConfig[Index] == 1) {
                 return True;
             }
@@ -1292,34 +1283,19 @@ Void LoadLaunchConfig(CSmPlayer _Player, Boolean _Respawned) {
     declare Anchor <=> MapLandmarks[Section];
     declare metadata Integer[] Meta_LaunchConfig for Anchor = [];
 
-    // One array per anchor holds all four keys; the width of a key block is its first element,
-    // so a map saved before a field was added still reads the fields it does have (layout note in
-    // Constants). A key the array does not reach keeps what ResetLaunchConfig left — ungranted,
-    // which is also what a legacy map without the metadata gets.
-    declare Width = 0;
-    if (Meta_LaunchConfig.count > 0) {
-        Width = Meta_LaunchConfig[0];
-    }
-
+    // One array per anchor holds all four keys, in blocks of C_LaunchFieldCount (layout note in
+    // Constants). A key whose block the array does not reach keeps what ResetLaunchConfig left —
+    // ungranted, which is also what a map without the metadata gets.
     for (Key, 1, Constants::C_LaunchKeyCount) {
         declare Slot = Key - 1;
-        declare Base = 1 + Slot * Width;
-        if (Width < 1 || Meta_LaunchConfig.count < Base + Width) {
+        declare Base = Slot * Constants::C_LaunchFieldCount;
+        if (Meta_LaunchConfig.count < Base + Constants::C_LaunchFieldCount) {
             continue;
         }
 
-        // The stored block, widened to the current field layout. A block saved before a field
-        // was added is read as far as it goes and the rest come out 0 rather than the field's
-        // default — the editor rewrites the anchor in full the next time it is saved. Narrowing
-        // to zero beats rejecting the block outright, which would silently ungrant every key on
-        // every existing map the first time a field is appended.
         declare Integer[] Fields = [];
         for (Field, 0, Constants::C_LaunchFieldCount - 1) {
-            if (Field < Width) {
-                Fields.add(Meta_LaunchConfig[Base + Field]);
-            } else {
-                Fields.add(0);
-            }
+            Fields.add(Meta_LaunchConfig[Base + Field]);
         }
 
         LaunchOn[Slot] = Fields[Constants::C_LaunchFieldOn] == 1;

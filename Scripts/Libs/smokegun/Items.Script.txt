@@ -84,8 +84,7 @@ Void Place() {
         // Any trampoline launch-pad (original Obstacle\\Trampoline.Item.gbx plus every
         // size in the Trampolines\\Normal|Small families) is recognised by the
         // "Trampoline" substring in its item path, so they all share the mapper-set launch
-        // metadata. Clamped here because the metadata may come from legacy or hand-edited
-        // maps. Legacy Meta_TrampolineDir is ignored.
+        // metadata. Clamped here because the metadata may come from a hand-edited map.
         if (TL::Find("Trampoline", ObjectName, False, True)) {
             declare metadata Meta_TrampolineUp for AnchorLandmark = Constants::C_TrampolineDefaultUp;
             declare metadata Meta_TrampolineDown for AnchorLandmark = Constants::C_TrampolineDefaultDown;

@@ -80,9 +80,11 @@
 #Const C_TrampolineVariantBaseMovement 30000	// dir 0..7 = 45 deg step from the owner's travel yaw
 
 // The frames the editor's "Relative to:" picker offers, in picker order. Stored per pad
-// (Meta_TrampolineFrame) and per key (Meta_Launch<N>_Frame), and mapped to the bases above
-// by LaunchFrameBase in the mode. The two defaults differ only so maps authored before the
-// picker existed keep the frame they were written in — pads were world-only, keys aim-only.
+// (Meta_TrampolineFrame) and per key (C_LaunchFieldFrame in Meta_LaunchConfig), and mapped to the
+// bases above by LaunchFrameBase in the mode. The two defaults differ because the triggers do: a
+// pad is placed geometry, so the direction it launches in is authored in world space, while a key
+// belongs to the player and has no placement to read a compass step against — straight ahead is
+// the only default that means anything there.
 #Const C_LaunchFrameWorld 0
 #Const C_LaunchFrameOrientation 1
 #Const C_LaunchFrameMovement 2
@@ -178,13 +180,11 @@
 // Array metadata for an anchor was verified to survive a map save/load in this engine version
 // (2026-08-17): stored per anchor, length preserved, readable from both the editor and the mode.
 //
-// Layout: element 0 is the field width each key block was written with, then C_LaunchKeyCount
-// blocks of that width, key 1 first — so key K field F sits at 1 + (K-1)*Width + F. Storing the
-// width is what lets a field be added later without invalidating existing maps: a block narrower
-// than C_LaunchFieldCount is read as far as it goes rather than rejected. The editor fills the
-// missing tail with the defaults above and rewrites the anchor at full width on the next save;
-// the mode reads that tail as 0 until then, so a new field wants a 0-equivalent default if old
-// maps should keep behaving. An absent or malformed array grants no keys at all.
+// Layout: C_LaunchKeyCount blocks of C_LaunchFieldCount, key 1 first — so key K field F sits at
+// (K-1)*C_LaunchFieldCount + F. A key whose whole block the array does not reach is read as
+// unconfigured (the editor shows the defaults above, the mode grants nothing), so an absent or
+// truncated array grants no keys at all. Appending a field moves every later block, which leaves
+// anchors saved before it short: they read as unconfigured until the editor rewrites them.
 #Const C_LaunchFieldOn 0
 #Const C_LaunchFieldUp 1
 #Const C_LaunchFieldDown 2
@@ -197,7 +197,7 @@
 #Const C_LaunchFieldRefill 9
 #Const C_LaunchFieldEmpty 10
 #Const C_LaunchFieldFrame 11
-#Const C_LaunchFieldCount 12				// append new fields above this and bump it; do not renumber
+#Const C_LaunchFieldCount 12				// append new fields above this and bump it; renumbering re-reads every stored array in the wrong order
 // How a key press reaches the mode: the action reports its own activation (SendRulesEvent
 // "press" -> OnActionCustomEvent), the way Nadeo's key-bound shield action and
 // Actions/Sneak.Script.txt do, and the mode reads the key off Event.ActionId. The two
