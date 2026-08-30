@@ -887,19 +887,22 @@ Void CopyLaunchMeta(CAnchorData _From, CAnchorData _To)
 Text LaunchKeyPicker(CAnchorData _Anchor, Text _Position)
 {
     // Half the width of a Select* bar — single digits need far less room than weapon names.
-    declare Total = 40;
-    declare Count = Constants::C_LaunchKeyCount;
+    // Divided in Reals: at four keys the integer division happened to come out exact, but at
+    // three it left the slots a unit short of the bar, pushing the whole row off centre and the
+    // last highlight past the clip's right edge.
+    declare Total = 40.;
+    declare Count = ML::ToReal(Constants::C_LaunchKeyCount);
     declare Width = Total / Count;
     declare TextTotal = ""^Total;
-    declare TextBar = ""^(Total + 1);
+    declare TextBar = ""^(Total + 1.);
 
     declare Labels = "";
     declare Highlights = "";
-    for (Key, 1, Count) {
-        declare CenterX = -Total / 2 + Width / 2 + (Key - 1) * Width;
+    for (Key, 1, Constants::C_LaunchKeyCount) {
+        declare CenterX = -Total / 2. + Width / 2. + ML::ToReal(Key - 1) * Width;
         declare TextKey = ""^Key;
         declare TextCenterX = ""^CenterX;
-        declare TextLeftX = ""^(CenterX - Width / 2);
+        declare TextLeftX = ""^(CenterX - Width / 2.);
         declare TextWidth = ""^Width;
 
         declare Values = LaunchMetaRead(_Anchor, Key);
@@ -3323,14 +3326,23 @@ Void Loop()
                         TestWaypoint(False);
                     }
 
+                    // Reopened after the paste, the way the new-anchor paste path above does:
+                    // the launch key picker bakes its highlights into the markup at build time,
+                    // so the row would otherwise keep showing the keys the anchor had before.
                     case "Event_Paste_Checkpoint": {
-                        if (CopiedCheckpointId != NullId && CopiedCheckpointId != G_LastAnchorId) {
+                        if (CopiedCheckpointId != NullId && CopiedCheckpointId != G_LastAnchorId
+                            && AnchorData.existskey(G_LastAnchorId)) {
+                            declare PastedInto <=> AnchorData[G_LastAnchorId];
                             PasteCheckpoint(CopiedCheckpointId);
+                            EditCheckpoint(PastedInto);
                         } 
                     }
                     case "Event_Paste_Spawn": {
-                        if (CopiedSpawnId != NullId && CopiedSpawnId != G_LastAnchorId) {
+                        if (CopiedSpawnId != NullId && CopiedSpawnId != G_LastAnchorId
+                            && AnchorData.existskey(G_LastAnchorId)) {
+                            declare PastedInto <=> AnchorData[G_LastAnchorId];
                             PasteSpawn(CopiedSpawnId);
+                            EditSpawn(PastedInto);
                         } 
                     }
 
@@ -3377,7 +3389,7 @@ Void Loop()
                     case "Event_Edit_Launch": {
                         // Flush whatever key is on screen before repointing the page at another
                         SaveLaunchAbilitySettings();
-                        if (AnchorData.existskey(G_LastAnchorId)) {
+                        if (Event.CustomEventData.count > 0 && AnchorData.existskey(G_LastAnchorId)) {
                             declare LaunchAnchor <=> AnchorData[G_LastAnchorId];
                             EditLaunchAbility(LaunchAnchor, ML::Clamp(TL::ToInteger(Event.CustomEventData[0]), 1, Constants::C_LaunchKeyCount));
                         }
