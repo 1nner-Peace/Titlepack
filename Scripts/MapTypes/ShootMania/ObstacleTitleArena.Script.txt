@@ -446,128 +446,72 @@ Text PropertyOrder(Text _Position)
     """;
 }
 
-Text MakeWindow(Text _Title, Text _Content)
+/**
+ * The dialog chrome, in one place: every window here is the same outer frame, title, close
+ * button, properties frame and background, and differs only in which header buttons it carries
+ * and how tall the background has to be.
+ *
+ * The flags say what a window offers rather than which variant it happens to be, so a new dialog
+ * picks its buttons instead of picking the copy that already has them. Enable/Disable, copy and
+ * paste, and test are the header of a waypoint dialog; back belongs to a sub-window, and takes
+ * the copy button's place because no dialog carries both.
+ *
+ * Two heights are in use: 115 for an ordinary dialog, and 134 for the ones carrying the launch
+ * row, which has to fit under the stamina block.
+ */
+Text MakeWindowBase(Text _Title, Text _Content, Boolean _WithEnabled, Boolean _WithCopyPaste, Boolean _WithTest, Boolean _WithBack, Integer _Height)
 {
-    return """
-<frame pos="125 20" scale="0.75" z-index="-1">
-    <frame>
-        <label pos="0 40" size="75 10" class="text" text="{{{_Title}}}" textsize="5" halign="center" valign="center2"/>
-        <label pos="41.5 41.5" size="7 7" valign="center" halign="center" scriptevents="1" scriptaction="Close"
-                   text="❌" focusareacolor2="FF0000FF" textsize="2" focusareacolor1="0000" />
-        {{{Select2("0 32.6", "Enable", "Disable", "Enabled_Selector")}}}
-        {{{LittleButton("-40 40.2", "", "Label_Copy")}}}
-        {{{LittleButton("-40 32.6", "", "Label_Paste")}}}
-        {{{LittleButton("-40 25", "", "Label_Test")}}}
-    </frame>
-    <frame id="properties" pos="0 10">
-        {{{_Content}}}
-    </frame>
-    <quad pos="-45 45" size="90 115" bgcolor="000000AA" scriptevents="1" id="Window_Background"/>
-</frame>
-    """;
-}
+    declare Header = "";
+    if (_WithEnabled) {
+        Header ^= Select2("0 32.6", "Enable", "Disable", "Enabled_Selector");
+    }
+    if (_WithCopyPaste) {
+        Header ^= LittleButton("-40 40.2", "", "Label_Copy")
+                ^ LittleButton("-40 32.6", "", "Label_Paste");
+    }
+    if (_WithTest) {
+        Header ^= LittleButton("-40 25", "", "Label_Test");
+    }
+    if (_WithBack) {
+        Header ^= LittleButton("-40 40.2", "⏴", "Launch_Back");
+    }
 
-Text MakeWindowNoTest(Text _Title, Text _Content)
-{
     return """
 <frame pos="125 20" scale="0.75" z-index="-1">
     <frame>
         <label pos="0 40" size="75 10" class="text" text="{{{_Title}}}" textsize="5" halign="center" valign="center2"/>
         <label pos="41.5 41.5" size="7 7" valign="center" halign="center" scriptevents="1" scriptaction="Close"
                    text="❌" focusareacolor2="FF0000FF" textsize="2" focusareacolor1="0000" />
-        {{{Select2("0 32.6", "Enable", "Disable", "Enabled_Selector")}}}
-        {{{LittleButton("-40 40.2", "", "Label_Copy")}}}
-        {{{LittleButton("-40 32.6", "", "Label_Paste")}}}
+        {{{Header}}}
     </frame>
     <frame id="properties" pos="0 10">
         {{{_Content}}}
     </frame>
-    <quad pos="-45 45" size="90 115" bgcolor="000000AA" scriptevents="1" id="Window_Background"/>
+    <quad pos="-45 45" size="90 {{{_Height}}}" bgcolor="000000AA" scriptevents="1" id="Window_Background"/>
 </frame>
     """;
 }
 
 Text MakeWindowNoCopyPaste(Text _Title, Text _Content)
 {
-    return """
-<frame pos="125 20" scale="0.75" z-index="-1">
-    <frame>
-        <label pos="0 40" size="75 10" class="text" text="{{{_Title}}}" textsize="5" halign="center" valign="center2"/>
-        <label pos="41.5 41.5" size="7 7" valign="center" halign="center" scriptevents="1" scriptaction="Close"
-                   text="❌" focusareacolor2="FF0000FF" textsize="2" focusareacolor1="0000" />
-        {{{Select2("0 32.6", "Enable", "Disable", "Enabled_Selector")}}}
-    </frame>
-    <frame id="properties" pos="0 10">
-        {{{_Content}}}
-    </frame>
-    <quad pos="-45 45" size="90 115" bgcolor="000000AA" scriptevents="1" id="Window_Background"/>
-</frame>
-    """;
+    return MakeWindowBase(_Title, _Content, True, False, False, False, 115);
 }
 
 Text MakeWindowWithoutEnabled(Text _Title, Text _Content)
 {
-    return """
-<frame pos="125 20" scale="0.75" z-index="-1">
-    <frame>
-        <label pos="0 40" size="75 10" class="text" text="{{{_Title}}}" textsize="5" halign="center" valign="center2"/>
-        <label pos="41.5 41.5" size="7 7" valign="center" halign="center" scriptevents="1" scriptaction="Close"
-                   text="❌" focusareacolor2="FF0000FF" textsize="2" focusareacolor1="0000" />
-    </frame>
-    <frame id="properties" pos="0 10">
-        {{{_Content}}}
-    </frame>
-    <quad pos="-45 45" size="90 115" bgcolor="000000AA" scriptevents="1" id="Window_Background"/>
-</frame>
-    """;
+    return MakeWindowBase(_Title, _Content, False, False, False, False, 115);
 }
 
-// MakeWindow variants for the two dialogs that carry the launch row: taller background so the
-// row fits under the stamina block, and a header "back" button for the launch sub-window.
 Text MakeWindowTall(Text _Title, Text _Content, Boolean _WithTest)
 {
-    declare TestButton = "";
-    if (_WithTest) {
-        TestButton = LittleButton("-40 25", "", "Label_Test");
-    }
-    return """
-<frame pos="125 20" scale="0.75" z-index="-1">
-    <frame>
-        <label pos="0 40" size="75 10" class="text" text="{{{_Title}}}" textsize="5" halign="center" valign="center2"/>
-        <label pos="41.5 41.5" size="7 7" valign="center" halign="center" scriptevents="1" scriptaction="Close"
-                   text="❌" focusareacolor2="FF0000FF" textsize="2" focusareacolor1="0000" />
-        {{{Select2("0 32.6", "Enable", "Disable", "Enabled_Selector")}}}
-        {{{LittleButton("-40 40.2", "", "Label_Copy")}}}
-        {{{LittleButton("-40 32.6", "", "Label_Paste")}}}
-        {{{TestButton}}}
-    </frame>
-    <frame id="properties" pos="0 10">
-        {{{_Content}}}
-    </frame>
-    <quad pos="-45 45" size="90 134" bgcolor="000000AA" scriptevents="1" id="Window_Background"/>
-</frame>
-    """;
+    return MakeWindowBase(_Title, _Content, True, True, _WithTest, False, 134);
 }
 
+// The launch sub-window: reached from the checkpoint and spawn dialogs, so it goes back to them
+// rather than enabling or copying anything of its own.
 Text MakeWindowWithBack(Text _Title, Text _Content)
 {
-    return """
-<frame pos="125 20" scale="0.75" z-index="-1">
-    <frame>
-        <label pos="0 40" size="75 10" class="text" text="{{{_Title}}}" textsize="5" halign="center" valign="center2"/>
-        <label pos="41.5 41.5" size="7 7" valign="center" halign="center" scriptevents="1" scriptaction="Close"
-                   text="❌" focusareacolor2="FF0000FF" textsize="2" focusareacolor1="0000" />
-        {{{LittleButton("-40 40.2", "⏴", "Launch_Back")}}}
-    </frame>
-    <frame id="properties" pos="0 10">
-        {{{_Content}}}
-    </frame>
-    <!-- Taller than MakeWindow's own background: the launch window carries the charge block and
-         the frame picker on top of everything the pad window has. Only EditLaunchAbility uses
-         this variant, so the height is its business alone. -->
-    <quad pos="-45 45" size="90 134" bgcolor="000000AA" scriptevents="1" id="Window_Background"/>
-</frame>
-    """;
+    return MakeWindowBase(_Title, _Content, False, False, False, True, 134);
 }
 
 Text SaveButton()
