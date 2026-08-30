@@ -602,9 +602,21 @@ foreach (Event in PendingEvents) {
                             // and every one of them must disarm its slot on the echo.
                             if (EchoedVariant >= Constants::C_TrampolineVariantBase
                                 && EchoedVariant <= Constants::C_TrampolineVariantBaseMovement + Constants::C_TrampolineVariantPackedMax) {
-                                // Normal launch: disarm so the action can fire again next touch
-                                // or key press (pad slot and key slots share this bookkeeping)
-                                DisarmLaunch(Shooter);
+                                // Normal launch: hand the slot back so the action can fire again
+                                // next touch or key press (pad slot and key slots share this
+                                // bookkeeping). Which slot fired is in the event: every key slot
+                                // runs its own copy of the action and the pad slot runs the shared
+                                // one, so the model that echoed names the slot it was loaded into
+                                // — 0, the pad slot, being both the shared model's answer and the
+                                // right answer for an echo we cannot place.
+                                //
+                                // Resolved off the arm stamps instead, this released whichever
+                                // launch was armed first, which is the wrong one as soon as a pad
+                                // touch and a key press are outstanding together (possible
+                                // whenever C_LaunchFireOnPadSlot is False): the slot that really
+                                // fired stayed marked armed until its timeout, while a slot still
+                                // holding a launch was disarmed under it.
+                                ReleaseLaunchSlot(Shooter, LaunchKeyFromActionId(Event.ActionId));
                                 RetireLaunchInFlight();
                             } else {
                                 // An echo that is not a launch encoding: the action fired on a
@@ -830,7 +842,7 @@ foreach (Player in AllPlayers) {
         case CSmPlayer::ESpawnStatus::NotSpawned: {
             if (!Player::isInitialized(Player)) {
                 Obstacle::NewPlayer(Player);
-                LoadTrampolineAction(Player);
+                // Replaces the pad slot too — LoadLaunchActions ends on LoadTrampolineAction
                 LoadLaunchActions(Player);
             } else if (!Player::hasTabsInitialized(Player)) {
                 declare CUIConfig UI <=> UIManager.GetUI(Player);
@@ -1490,7 +1502,7 @@ Void ApplyLaunchBinds(CSmPlayer _Player) {
     declare Boolean[] LaunchOn for _Player = [];
     declare Boolean[] LaunchBound for _Player = [];
     if (LaunchBound.count < Constants::C_LaunchKeyCount) {
-        LaunchBound = [False, False, False, False];
+        LaunchBound = Tools::LaunchFalseSlots();
     }
 
     for (Key, 1, Constants::C_LaunchKeyCount) {
@@ -1525,7 +1537,7 @@ Void ApplyLaunchBinds(CSmPlayer _Player) {
 // spawn corrupts it whether or not any launch key is involved.
 Void LoadLaunchActions(CSmPlayer _Player) {
     declare Boolean[] LaunchBound for _Player = [];
-    LaunchBound = [False, False, False, False];
+    LaunchBound = Tools::LaunchFalseSlots();
     // Fresh instances: nothing armed in them and no fire latch to wait out
     ClearLaunchSlotState(_Player, -1);
     LoadTrampolineAction(_Player);
@@ -1572,23 +1584,6 @@ Void ArmLaunch(CSmPlayer _Player, Integer _SlotIndex, Integer _Variant) {
     LaunchSlotArmedAt[_SlotIndex] = Now;	// busy until the fire echo comes back (or the timeout)
 
     ActionSetVariant(_Player, LaunchSlot(_SlotIndex), _Variant);
-}
-
-// A fire echo resolves the oldest armed slot (launches fire in the order they were armed), which
-// is the smallest arm stamp: one launch to a slot at a time means a slot is waiting on at most one
-// echo, so the stamps alone order what is outstanding. Falling back to the pad slot keeps an echo
-// with nothing armed harmless.
-Void DisarmLaunch(CSmPlayer _Player) {
-    declare Integer[] LaunchSlotArmedAt for _Player = [];
-    declare SlotIndex = 0;
-    declare ArmedAt = 0;
-    foreach (Slot => Stamp in LaunchSlotArmedAt) {
-        if (Stamp > 0 && (ArmedAt == 0 || Stamp < ArmedAt)) {
-            SlotIndex = Slot;
-            ArmedAt = Stamp;
-        }
-    }
-    ReleaseLaunchSlot(_Player, SlotIndex);
 }
 
 // One armed launch has resolved: retire it from the in-flight count. Once nothing else is still
