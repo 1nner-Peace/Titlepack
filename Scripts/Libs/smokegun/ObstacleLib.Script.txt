@@ -642,6 +642,12 @@ Boolean JumpToCheckpointIdent_ByPassSpawn(CSmPlayer _Player, Ident _Target) {
     Player::setUsedJump(_Player, True);
     Player::setLastCheckpoint(_Player, _Target);
 
+    // The section anchor follows the jump, so the target checkpoint's settings govern the section
+    // the player now runs. Set on its own rather than through Private_CheckpointEffect, which this
+    // path deliberately skips: applying the checkpoint's effects here would re-arm weapons and,
+    // on a portal checkpoint, teleport the player straight back out of the waypoint being tested.
+    Player::SetSectionAnchor(_Player, _Target);
+
     Private_CpRestart(_Player, 3500, _Target, NullId, False);
 
     // TODO: Below is copy pasted in common behaviour after respawn
