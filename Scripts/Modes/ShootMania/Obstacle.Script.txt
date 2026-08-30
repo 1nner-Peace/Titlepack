@@ -236,9 +236,7 @@ SM::SetupDefaultVisibility();
 Obstacle::LoadActions();
 
 // Trampoline: reset runtime state, then load the action (Actions/Trampoline.Action.Gbx, package root)
-G_TrampolinePvPWindowEnd = 0;
-G_TrampolinePvPRestore = False;
-G_TrampolinePvPInFlight = 0;
+ResetLaunchPvPWindow();
 G_LaunchLoopPass = 0;
 ActionList_Begin();
 G_TrampolineActionId = ActionList_Add("Trampoline.Action.Gbx");
@@ -309,6 +307,11 @@ if (!Obstacle::PrepareMap(ModeInfo::GetName()) && Editor_WayPointSpawn_Flag == 0
 {
     MB_Private_StopMap();
 }
+
+// Ahead of the map's own PvP settings, and for their sake: a launch still in flight when the
+// previous map ended leaves the window open, and the first pass of Match_PlayLoop would close it
+// by restoring the *previous* map's UsePvPWeapons over the value being set right here.
+ResetLaunchPvPWindow();
 
 UsePvPWeapons = Obstacle::IsPvPWeaponsMap();
 UsePvPCollisions = Obstacle::IsPvPCollisionsMap();
@@ -555,8 +558,8 @@ foreach (Event in PendingEvents) {
         case CSmModeEvent::EType::OnActionCustomEvent : {
             // :'(
 
-            // Events from the trampoline action. The frozen Gbx still emits a periodic "hb"
-            // liveness ping (harmless); only the fire echo — the variant it launched with — matters.
+            // Events from the trampoline action: a press from a bound key slot, or the fire echo
+            // — the variant the action launched with.
             if (Event.Param1 == "trampoline") {
                 declare Payload = "?";
                 if (Event.Param2.count > 0) Payload = Event.Param2[0];
@@ -585,7 +588,7 @@ foreach (Event in PendingEvents) {
                         default: { DoNothing(); }
                     }
                 }
-                else if (Payload != "hb") {
+                else {
                     switchtype (Event.ShooterEntity) {
                         case CSmPlayer: {
                             declare Shooter = (Event.ShooterEntity as CSmPlayer);
@@ -602,6 +605,7 @@ foreach (Event in PendingEvents) {
                                 // Normal launch: disarm so the action can fire again next touch
                                 // or key press (pad slot and key slots share this bookkeeping)
                                 DisarmLaunch(Shooter);
+                                RetireLaunchInFlight();
                             } else {
                                 // An echo that is not a launch encoding: the action fired on a
                                 // value the mode never wrote. A Gbx built before the Variant
@@ -613,20 +617,11 @@ foreach (Event in PendingEvents) {
                                 // (a permanent "fired 419430400" flood that also wiped every
                                 // armed launch before it could fire), while the stray echo on its
                                 // own is harmless: the instance goes quiet after that one shot.
+                                //
+                                // Nothing is retired from the in-flight count either: no launch of
+                                // ours resolved here, and the launches that are genuinely still
+                                // outstanding need the PvP window to stay open until they fire.
                                 DoNothing();
-                            }
-                            // This armed launch has resolved (fired, or corrupt and replaced): retire it
-                            // from the in-flight count. Once nothing else is still waiting to fire, collapse
-                            // the global PvP window to a short post-fire tail (bullets explode immediately,
-                            // so the knockback is landing now) instead of holding it open for the safety cap.
-                            if (G_TrampolinePvPInFlight > 0) {
-                                G_TrampolinePvPInFlight -= 1;
-                            }
-                            if (G_TrampolinePvPInFlight <= 0 && G_TrampolinePvPWindowEnd > 0) {
-                                declare ShortEnd = Now + Constants::C_TrampolinePvPPostFireMs;
-                                if (ShortEnd < G_TrampolinePvPWindowEnd) {
-                                    G_TrampolinePvPWindowEnd = ShortEnd;
-                                }
                             }
                         }
                         default: { DoNothing(); }
@@ -1536,6 +1531,17 @@ Void LoadLaunchActions(CSmPlayer _Player) {
     LoadTrampolineAction(_Player);
 }
 
+// Close the window and forget what it was holding. The window is per-map — it restores the
+// UsePvPWeapons of the map it was opened on — so it has to be dropped wherever that value is
+// decided again, or a launch outstanding at map end restores the old map's setting over the new
+// map's (Match_StartMap), and a map left mid-launch carries a phantom in-flight count into the
+// next server round (Match_StartServer).
+Void ResetLaunchPvPWindow() {
+    G_TrampolinePvPWindowEnd = 0;
+    G_TrampolinePvPRestore = False;
+    G_TrampolinePvPInFlight = 0;
+}
+
 // Open the window in which a blast may push players (G_LastUsePvPWeapons keeps the "used PvP
 // weapons" run-stamp suppressed — a mode-sanctioned launch is not player PvP). Opened at the
 // safety cap; the fire echo collapses it to a short tail once the blast lands.
@@ -1583,6 +1589,21 @@ Void DisarmLaunch(CSmPlayer _Player) {
         }
     }
     ReleaseLaunchSlot(_Player, SlotIndex);
+}
+
+// One armed launch has resolved: retire it from the in-flight count. Once nothing else is still
+// waiting to fire, collapse the global PvP window to a short post-fire tail (bullets explode
+// immediately, so the knockback is landing now) instead of holding it open for the safety cap.
+Void RetireLaunchInFlight() {
+    if (G_TrampolinePvPInFlight > 0) {
+        G_TrampolinePvPInFlight -= 1;
+    }
+    if (G_TrampolinePvPInFlight <= 0 && G_TrampolinePvPWindowEnd > 0) {
+        declare ShortEnd = Now + Constants::C_TrampolinePvPPostFireMs;
+        if (ShortEnd < G_TrampolinePvPWindowEnd) {
+            G_TrampolinePvPWindowEnd = ShortEnd;
+        }
+    }
 }
 
 // A granted key was pressed: check the section's gates, then arm that key's slot exactly the
