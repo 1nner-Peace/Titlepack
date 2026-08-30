@@ -278,6 +278,25 @@ Text GetLayer() {
     declare ColourOrientationHex = "FFF27E";
     declare ColourMovementHex = "4BFFEC";
 
+    // The legend lines, one per frame and in the frames' own order, which is also the order the
+    // picker lists them in. Emitted from the frame count rather than written out one by one, and
+    // with the frame index in the id, so the page script can look all of them up in one loop and
+    // a frame added to the picker cannot leave it indexing a line that was never emitted.
+    declare Text[] LegendNames = ["World", "Orientation", "Movement"];
+    declare Text[] LegendHexes = [ColourWorldHex, ColourOrientationHex, ColourMovementHex];
+    declare Legend = "";
+    for (FrameIndex, 0, FrameCount - 1) {
+        declare LegendName = "";
+        declare LegendHex = "FFFFFF";
+        if (LegendNames.count > FrameIndex) {
+            LegendName = LegendNames[FrameIndex];
+            LegendHex = LegendHexes[FrameIndex];
+        }
+        Legend ^= """
+        <label id="Label_RelFrame{{{FrameIndex}}}" pos="0 0" size="20 3" text="{{{LegendName}}}" textsize="0.6" textfont="OswaldMono" textcolor="{{{LegendHex}}}" halign="left" valign="center2" opacity="1.0" hidden="1"/>
+        """;
+    }
+
     // Drag handle for the F8 UI editor, sized for the widest and tallest the block can get rather
     // than for what it happens to draw. The rows run up from C_BaseY (-79) and the legend down from
     // it, so vertically it spans all three legend lines (-79 - 3 * 3.6 = -89.8, minus the 2.35 a
@@ -371,9 +390,7 @@ Text GetLayer() {
              into a column under one another; the prefix is right-aligned into the gap left of that
              column, which is what lets the page script place it without measuring it. -->
         <label id="Label_RelPrefix" pos="0 0" size="20 3" text="Relative to:" textsize="0.6" textfont="OswaldMono" textcolor="FFFFFF" halign="right" valign="center2" opacity="1.0" hidden="1"/>
-        <label id="Label_RelWorld" pos="0 0" size="20 3" text="World" textsize="0.6" textfont="OswaldMono" textcolor="{{{ColourWorldHex}}}" halign="left" valign="center2" opacity="1.0" hidden="1"/>
-        <label id="Label_RelOrientation" pos="0 0" size="20 3" text="Orientation" textsize="0.6" textfont="OswaldMono" textcolor="{{{ColourOrientationHex}}}" halign="left" valign="center2" opacity="1.0" hidden="1"/>
-        <label id="Label_RelMovement" pos="0 0" size="20 3" text="Movement" textsize="0.6" textfont="OswaldMono" textcolor="{{{ColourMovementHex}}}" halign="left" valign="center2" opacity="1.0" hidden="1"/>
+        {{{Legend}}}
     </frame>
 <script><!--
     #Include "MathLib" as ML
@@ -501,11 +518,16 @@ Text GetLayer() {
         wait(InputPlayer != Null && Page != Null);
 
         // Cached once. Looking the quads up with GetFirstChild inside the draw loop is what forced
-        // the throttle that made the fill animation stutter. Quad N of row R lives at
-        // R * C_BarMax + N in every one of these, since rows are appended in order and each one
-        // appends exactly C_BarMax of each quad — so the mapping survives a row that fails to
-        // resolve.
+        // the throttle that made the fill animation stutter. Quad N of cached row R lives at
+        // R * C_BarMax + N in every one of these, since a row appends exactly C_BarMax of each
+        // quad and only ever appends to all of them together.
+        //
+        // A cached row's position is not its key, though: a row that fails to resolve is skipped
+        // entirely, and everything below it would then sit one slot up. Rows_Key carries the key
+        // each cached row was built for, so the record a row draws is the record for the number
+        // printed on it whatever else did or did not resolve.
         declare CMlFrame[] Frame_Rows;
+        declare Integer[] Rows_Key;
         declare CMlQuad[] Quads_GlowOut;
         declare CMlQuad[] Quads_BarBg;
         declare CMlQuad[] Quads_BarFill;
@@ -526,8 +548,11 @@ Text GetLayer() {
             // Row index and key never part company: hiding a row below only moves this one up,
             // it never renumbers it.
             declare Label_Key <=> (Frame_Row.GetFirstChild("Label_Key") as CMlLabel);
-            Label_Key.Value = ""^(Row + 1);
+            if (Label_Key != Null) {
+                Label_Key.Value = ""^(Row + 1);
+            }
             Frame_Rows.add(Frame_Row);
+            Rows_Key.add(Row);
 
             foreach (Name in C_InfoItemNames) {
                 declare CMlFrame Frame_Item <=> (Frame_Row.GetFirstChild("Frame_Item"^Name) as CMlFrame);
@@ -555,16 +580,15 @@ Text GetLayer() {
             }
         }
 
-        // The legend is the block's own, not a row's, so it is looked up once off the page. The
-        // three name labels are held in the frames' own order (world, orientation, movement), so
-        // the layout pass can walk them against the flags it raises while counting the rows.
+        // The legend is the block's own, not a row's, so it is looked up once off the page. One
+        // label per frame, held at the frame's own index — GetLayer emits them from the same
+        // C_FrameCount the layout pass bounds-checks against, so the flags it raises while
+        // counting the rows and the labels it walks them against cannot fall out of step.
         declare CMlLabel[] Labels_Legend;
-        declare CMlLabel Label_RelWorld <=> (Page.GetFirstChild("Label_RelWorld") as CMlLabel);
-        declare CMlLabel Label_RelOrientation <=> (Page.GetFirstChild("Label_RelOrientation") as CMlLabel);
-        declare CMlLabel Label_RelMovement <=> (Page.GetFirstChild("Label_RelMovement") as CMlLabel);
-        Labels_Legend.add(Label_RelWorld);
-        Labels_Legend.add(Label_RelOrientation);
-        Labels_Legend.add(Label_RelMovement);
+        for (FrameIndex, 0, C_FrameCount - 1) {
+            declare CMlLabel Label_Legend <=> (Page.GetFirstChild("Label_RelFrame"^FrameIndex) as CMlLabel);
+            Labels_Legend.add(Label_Legend);
+        }
         declare Label_RelPrefix <=> (Page.GetFirstChild("Label_RelPrefix") as CMlLabel);
         // Where the legend's right edge sits: against the strip's left edge, which no longer moves
         // once the strip's width is fixed. The names hang left of it, so what does move with the
@@ -682,12 +706,16 @@ Text GetLayer() {
                 // launch is the same in every frame, and a legend line explaining a symbol that is
                 // nowhere on screen explains nothing.
                 declare VisibleCount = 0;
-                declare Boolean[] LegendOn = [False, False, False];
+                declare Boolean[] LegendOn = [];
+                for (FrameIndex, 0, C_FrameCount - 1) {
+                    LegendOn.add(False);
+                }
                 foreach (Index => Frame_Count in Frame_Rows) {
-                    if (Net_LaunchKeys.count <= Index) {
+                    declare KeyIndex = Rows_Key[Index];
+                    if (Net_LaunchKeys.count <= KeyIndex) {
                         continue;
                     }
-                    declare KeyHud = Net_LaunchKeys[Index];
+                    declare KeyHud = Net_LaunchKeys[KeyIndex];
                     if (KeyHud.Bars <= 0) {
                         continue;
                     }
@@ -702,11 +730,12 @@ Text GetLayer() {
 
                 declare VisibleRows = 0;
                 foreach (Index => Frame_Row in Frame_Rows) {
+                    declare KeyIndex = Rows_Key[Index];
                     // A key with no record yet draws nothing, the same way one whose record says
                     // zero bars does.
                     declare Bars = 0;
-                    if (Net_LaunchKeys.count > Index) {
-                        Bars = Net_LaunchKeys[Index].Bars;
+                    if (Net_LaunchKeys.count > KeyIndex) {
+                        Bars = Net_LaunchKeys[KeyIndex].Bars;
                     }
 
                     if (Bars <= 0) {
@@ -715,7 +744,7 @@ Text GetLayer() {
                         }
                         continue;
                     }
-                    declare KeyHud = Net_LaunchKeys[Index];
+                    declare KeyHud = Net_LaunchKeys[KeyIndex];
 
                     declare Filled = KeyHud.Filled;
 
@@ -858,8 +887,8 @@ Text GetLayer() {
                         Quad_FrameSide.Visible = KeyFrame == C_FrameMovement;
                     }
 
-                    Row_Charging[Index] = Charging;
-                    Row_BarWidth[Index] = BarWidth;
+                    Row_Charging[KeyIndex] = Charging;
+                    Row_BarWidth[KeyIndex] = BarWidth;
                 }
 
                 // The legend hangs off the bottom of the block, the frames in their own order and
