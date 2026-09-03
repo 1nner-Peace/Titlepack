@@ -81,10 +81,14 @@ Void Place() {
 
         }
 
-        // Any trampoline launch-pad (original Obstacle\\Trampoline.Item.gbx plus every
-        // size in the Trampolines\\Normal|Small families) is recognised by the
-        // "Trampoline" substring in its item path, so they all share the mapper-set launch
-        // metadata. Clamped here because the metadata may come from a hand-edited map.
+        // Any trampoline launch-pad -- every size in the Trampolines\\1. Small and
+        // Trampolines\\2. Normal families, which C_TrampolineItems is what registers -- is
+        // recognised by the "Trampoline" substring in its item path, so they all share the
+        // mapper-set launch metadata. The test is on the path rather than on the list so a
+        // pad added to one of those families is picked up by adding it to C_TrampolineItems
+        // alone; a pad the list does not register never reaches here at all, dropped for
+        // want of an ident above. Clamped because the metadata may come from a hand-edited
+        // map.
         if (TL::Find("Trampoline", ObjectName, False, True)) {
             declare metadata Meta_TrampolineUp for AnchorLandmark = Constants::C_TrampolineDefaultUp;
             declare metadata Meta_TrampolineDown for AnchorLandmark = Constants::C_TrampolineDefaultDown;

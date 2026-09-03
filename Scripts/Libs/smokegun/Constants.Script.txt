@@ -131,12 +131,19 @@
 // A checkpoint (or the start spawn) grants and configures them for its section; the mode binds
 // one action slot per granted key and arms it with a trampoline variant when the key is pressed.
 #Const C_LaunchKeyCount 4					// keys 1..4 = EActionInput::Activable1..4 = action Slot_E..Slot_H
-// One action model per key — byte-identical copies of Trampoline.Action.Gbx. This is what makes
-// several keys work at once: a bound action's press echo carries no slot and no key (every
+// One action model per key, each running the same script as Trampoline.Action.Gbx. This is what
+// makes several keys work at once: a bound action's press echo carries no slot and no key (every
 // identity the event does carry is Slot_A), but it does carry the *model* name in Event.ActionId,
-// so giving each key its own copy of the file turns the echo into an exact key id. Rebuild them
-// with `cp Trampoline.Action.Gbx TrampolineKeyN.Action.Gbx` whenever the action Gbx changes; the
-// copies need no separate authoring, only distinct names. Index 0 = key 1.
+// so giving each key its own model turns the echo into an exact key id. The names below are what
+// LaunchKeyFromActionId matches, path and extension included.
+//
+// Rebuild them by saving the action out under each name — NOT with `cp`. A Gbx carries its own
+// ident near the head of the file (the four shipped here differ from Trampoline.Action.Gbx, and
+// from each other, in exactly that string and nothing else), and four files sharing one ident is
+// a risk none of this needs to take: the game is free to key its loaded actions by ident rather
+// than by path, and if it does, ActionList_Add hands back the same model for all four, every
+// press echoes the same name, and LaunchKeyFromActionId collapses the keys onto one. Distinct
+// idents cost nothing and make the question moot. Index 0 = key 1.
 #Const C_LaunchActionModels [
 	"TrampolineKey1.Action.Gbx",
 	"TrampolineKey2.Action.Gbx",
