@@ -1521,6 +1521,12 @@ Void LoadLaunchActions(CSmPlayer _Player) {
     LaunchBound = Tools::LaunchFalseSlots();
     // Fresh instances: nothing armed in them and no fire latch to wait out
     ClearLaunchSlotState(_Player, -1);
+    // The pad cooldown belongs to the run that spent it. It is deliberately player-wide rather
+    // than per-pad, so carrying it across a spawn would silence every pad in the map at once --
+    // for up to C_TrampolineCooldownMax on a mapper-set cooldown, which is long enough to strand
+    // a player who lands on a pad straight out of a respawn.
+    declare Integer TrampolineCooldownEnd for _Player = 0;
+    TrampolineCooldownEnd = 0;
     LoadTrampolineAction(_Player);
 }
 
