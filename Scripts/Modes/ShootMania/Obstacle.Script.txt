@@ -1474,7 +1474,6 @@ Boolean LaunchSlotReady(CSmPlayer _Player, Integer _SlotIndex) {
 // not free (it resets the action's own state and costs an echo), and this runs on every section
 // change. A map or section with no launch abilities makes no action calls at all.
 Void ApplyLaunchBinds(CSmPlayer _Player) {
-    if (G_TrampolineActionId == NullId) return;
     declare Boolean[] LaunchOn for _Player = [];
     declare Boolean[] LaunchBound for _Player = [];
     if (LaunchBound.count < Constants::C_LaunchKeyCount) {
@@ -1482,18 +1481,24 @@ Void ApplyLaunchBinds(CSmPlayer _Player) {
     }
 
     for (Key, 1, Constants::C_LaunchKeyCount) {
-        declare Granted = LaunchOn.count >= Key && LaunchOn[Key - 1];
+        // The key's own model or no binding at all. Its name is the only thing that identifies
+        // the key when the press echo arrives (LaunchKeyFromActionId), so a slot loaded with any
+        // other model is bound but unplaceable: the HUD offers the ability, the echo comes back
+        // naming a model that is not a key, and the press is dropped. Treating the key as
+        // ungranted instead at least leaves the HUD and the mode saying the same thing.
+        //
+        // Asked per key rather than once on G_TrampolineActionId, which gates the pad slot and
+        // says nothing about whether this key's model registered.
+        declare Ident ModelId = NullId;
+        if (G_LaunchActionIds.count >= Key) {
+            ModelId = G_LaunchActionIds[Key - 1];
+        }
+        declare Granted = ModelId != NullId && LaunchOn.count >= Key && LaunchOn[Key - 1];
         if (Granted == LaunchBound[Key - 1]) {
             continue;
         }
         LaunchBound[Key - 1] = Granted;
         if (Granted) {
-            // The key's own model, not the shared one: its name is what identifies the key when
-            // the press echo arrives (LaunchKeyFromActionId).
-            declare ModelId = G_TrampolineActionId;
-            if (G_LaunchActionIds.count >= Key && G_LaunchActionIds[Key - 1] != NullId) {
-                ModelId = G_LaunchActionIds[Key - 1];
-            }
             ActionLoad(_Player, LaunchSlot(Key), ModelId);
             ActionBind(_Player, LaunchSlot(Key), LaunchInput(Key));
             // Disarmed, so a fresh instance can't fire on whatever the slot held before
