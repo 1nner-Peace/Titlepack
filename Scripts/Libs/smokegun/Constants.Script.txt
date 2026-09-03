@@ -109,7 +109,12 @@
 #Const C_TrampolineCooldownMax 10000		// clamp ceiling for Meta_TrampolineCooldown (ms)
 #Const C_TrampolineWaitGroundDelayPrefill 25	// editor convenience: delay ticking "wait until touching ground" prefills (ms), only when the current delay is shorter
 #Const C_TrampolineTouchResetGap 400		// ms without touch events after which the delay timer resets
-#Const C_TrampolineTouchMaxDist 6.			// arming guard: must span the item's TriggerShape reach (a 6x6 pad corner is ~4.24m) yet stay < a respawn distance
+// Arming guard: ML::Distance is 3D, so this must span the item's TriggerShape reach from the
+// anchor *and* clear the height the player sits at above it, yet stay < a respawn distance so a
+// touch queued across a respawn is still dropped. Sized off the largest pad shipped: an 8x8 is
+// centre-anchored, so its corner is sqrt(4^2+4^2) = 5.66m out, and 8m leaves the same 5.66m of
+// vertical headroom on top of that for a player already rising off the pad while touches flow.
+#Const C_TrampolineTouchMaxDist 8.
 #Const C_TrampolineAllowBothVertical True	// False: up > 0 suppresses the down blast
 // Calibration belongs to the frame, not to the trigger: these two are what the WORLD frame
 // needs, whether a pad or a launch key picked it.

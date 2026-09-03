@@ -662,7 +662,7 @@ foreach (Event in PendingEvents) {
 							declare Text ItemName for Event.Object = "";
 							if (TL::Find("Trampoline", ItemName, False, True)) {
 								// Arming guard: the OnPlayerTouchesObject event fires across the whole TriggerShape,
-									// but arming must reach every point in it (a 6x6 pad corner is ~4.24m from the anchor).
+									// but arming must reach every point in it (an 8x8 pad corner is ~5.66m from the anchor).
 									// Kept below a respawn distance so it still drops stale touches queued across a respawn.
 								if (ML::Distance(Event.Object.AnchorLandmark.Position, Event.Player.Position) <= Constants::C_TrampolineTouchMaxDist) {
 									// Launch gates, set per anchor by the mapper (copied onto the object, clamped, in Items::Place)
