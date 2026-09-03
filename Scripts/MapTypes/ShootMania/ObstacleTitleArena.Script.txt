@@ -2331,6 +2331,13 @@ Void EditTrampolineItem(CAnchorData _Item)
     TrampWaitGround = Meta_TrampolineWaitGround;
     TrampDelay = ML::Clamp(Meta_TrampolineDelay, 0, Constants::C_TrampolineDelayMax);
     TrampCooldown = ML::Clamp(Meta_TrampolineCooldown, 0, Constants::C_TrampolineCooldownMax);
+    // Reset per pad: the page's variable store outlives the dialog, so bookkeeping left standing
+    // from the pad edited before this one would be read as this pad's. Unticking "only when
+    // touching ground" would then write the *previous* pad's pre-tick delay here and save it.
+    declare Boolean TrampDelayPrefilled for ManialinkPage = False;
+    declare Integer TrampDelayBeforePrefill for ManialinkPage = 0;
+    TrampDelayPrefilled = False;
+    TrampDelayBeforePrefill = TrampDelay;
 
     /// --- Manialink
     // Same layout as the launch ability page (see EditLaunchAbility), minus its enable row and
