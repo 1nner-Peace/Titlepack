@@ -153,29 +153,30 @@ Text Select4(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _
     """;
 }
 
-// Same bar as Select4, but a slot's id is _IdPrefix ^ index rather than its own text, so the
-// options can read as bare numbers ("0.1", "1") without those becoming control ids. Same id
-// convention as Select8Arrows, and the click handler reads the picked index off the id.
+// Like Select4, but a slot's id is _IdPrefix ^ index rather than its own text, so the options
+// can read as bare numbers ("0.1", "1") without those becoming control ids. Same id convention
+// as Select8Arrows, and the click handler reads the picked index off the id. The bar is
+// narrower than Select4's since bare numbers need less room than words.
 Text Select4Ids(Text _Position, Text _IdPrefix, Text[] _Options, Text _Selector)
 {
     declare Labels = "";
     for (Index, 0, 3) {
         declare SlotId = _IdPrefix ^ Index;
-        declare SlotX = ""^(-30 + Index * 20);
+        declare SlotX = ""^(-22.5 + Index * 15.);
         declare SlotText = _Options[Index];
         Labels ^= """
-            <label id="{{{SlotId}}}" pos="{{{SlotX}}} -2" size="20 6" text="{{{SlotText}}}"
+            <label id="{{{SlotId}}}" pos="{{{SlotX}}} -2" size="15 6" text="{{{SlotText}}}"
                 halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
         """;
     }
 
     return """
         <frame pos="{{{_Position}}}">
-            <frame clip="True" clipposn="0 -2.5" clipsizen="80 5" halign="center">
+            <frame clip="True" clipposn="0 -2.5" clipsizen="60 5" halign="center">
                 {{{Labels}}}
-                <quad  id="{{{_Selector}}}" pos="-40 1"   size="20 7" bgcolor="4777C1FF"/>
+                <quad  id="{{{_Selector}}}" pos="-30 1"   size="15 7" bgcolor="4777C1FF"/>
             </frame>
-            <quad pos="0 0.5" size="81 6.1" bgcolor="797979AA" halign="center"/>
+            <quad pos="0 0.5" size="61 6.1" bgcolor="797979AA" halign="center"/>
         </frame>
     """;
 }
@@ -938,16 +939,25 @@ Void EditMap()
 
     /// --- Manialink
     declare Properties = """
-        <frame id="Map" pos="0 15">
-            {{{BigProperty("0 5", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
-            {{{BigProperty("0 -10", "Settings to enable", "")}}}
-            {{{Property("-20 -17.5", "PvP Weapons", Checkbox("13 0", "Checkbox_PvP_Weapons"))}}}
-            {{{Property("12.5 -17.5", "PvP Collisions", Checkbox("13 0", "Checkbox_PvP_Collisions"))}}}
-            {{{Property("-20 -25", "Same-Wall WJ", Checkbox("13 0", "Checkbox_SameWallJump"))}}}
-            {{{Property("-20 -32.5", "Fast Respawn", Checkbox("13 0", "Checkbox_ForceFastRS"))}}}
-            {{{BigProperty("0 -43", "Weapon Ready Delay", Entry("0 -7.5", "Entry_Invulnerability"))}}}
-            {{{BigProperty("0 -61.5", "Leaderboard", "")}}}
-            {{{Property("0 -70", "Enabled", Checkbox("13 0", "Checkbox_LB_Enabled"))}}}
+        <frame id="Speed" pos="0 20">
+            {{{BigProperty("0 0", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
+        </frame>
+
+        <frame id="Settings" pos="0 4">
+            {{{BigProperty("0 0", "Settings to enable", "")}}}
+            {{{Property("-20 -7.5", "PvP Weapons", Checkbox("13 0", "Checkbox_PvP_Weapons"))}}}
+            {{{Property("12.5 -7.5", "PvP Collisions", Checkbox("13 0", "Checkbox_PvP_Collisions"))}}}
+            {{{Property("-20 -15", "Same-Wall WJ", Checkbox("13 0", "Checkbox_SameWallJump"))}}}
+            {{{Property("-20 -22.5", "Fast Respawn", Checkbox("13 0", "Checkbox_ForceFastRS"))}}}
+        </frame>
+
+        <frame id="Invulnerability" pos="0 -28">
+            {{{BigProperty("0 0", "Weapon Ready Delay", Entry("0 -7.5", "Entry_Invulnerability"))}}}
+        </frame>
+
+        <frame id="Leaderboard" pos="0 -46">
+            {{{BigProperty("0 0", "Leaderboard", "")}}}
+            {{{Property("0 -7.5", "Enabled", Checkbox("13 0", "Checkbox_LB_Enabled"))}}}
         </frame>
     """;
 
@@ -1014,7 +1024,8 @@ Void EditMap()
             Label_ForceFastRS.SetText("");
         }
 
-        Quad_Speed_Selector.RelativePosition_V3.X = -40. + Speed_Tier*20.;
+        // Slot geometry comes from Select4Ids: first slot at -30, one slot every 15 units
+        Quad_Speed_Selector.RelativePosition_V3.X = -30. + Speed_Tier*15.;
         Entry_Invulnerability.SetText(TL::ToText(Invulnerability), False);
 
         SendCustomEvent("Event_Save_Map", Text[]);
