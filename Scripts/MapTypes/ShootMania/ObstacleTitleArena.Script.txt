@@ -309,6 +309,15 @@ Text Property(Text _Position, Text _Title, Text _Content)
     """;
 }
 
+// A note under a control, saying something about it that its title has no room for.
+Text Hint(Text _Position, Text _Text)
+{
+    return """
+        <label pos="{{{_Position}}}" size="75 4" text="{{{_Text}}}" textsize="1" opacity="0.6"
+            halign="center" valign="center2" class="text"/>
+    """;
+}
+
 // Property with the title on the same row as the content, right-aligned just left of it.
 // _Position is the row centre line, so the content is placed around y = 0, not below it.
 Text InlineProperty(Text _Position, Text _Title, Text _Content)
@@ -685,9 +694,10 @@ Void InitWeaponPageVariables(CAnchorData _Anchor)
     declare metadata Meta_Stamina for _Anchor = 0;
     declare metadata Meta_Stamina_Gain for _Anchor = 1.0;
     declare metadata Meta_Stamina_Amount for _Anchor = 1.0;
-    // Absent on every map saved before speed was editable, and these defaults are the stock
-    // movement those maps were built for.
-    declare metadata Meta_Speed for _Anchor = Constants::C_SpeedTierNormal;
+    // The tier is one value for the whole map - a model's gameplay params only take hold when a
+    // player spawns, so it cannot change per section. Both keys are absent on maps saved before
+    // speed was editable, and these defaults are the stock movement those maps were built for.
+    declare metadata Meta_Speed for Map = Constants::C_SpeedTierNormal;
     declare metadata Meta_SpeedPower for _Anchor = Constants::C_SpeedDefaultPower;
 
     Weapon = Meta_Weapon;
@@ -709,7 +719,7 @@ Void SaveWeaponVariables(CAnchorData _Anchor, Integer Weapon, Real Weapon_Gain, 
     declare metadata Meta_Stamina for _Anchor = 0;
     declare metadata Meta_Stamina_Gain for _Anchor = 1.0;
     declare metadata Meta_Stamina_Amount for _Anchor = 1.0;
-    declare metadata Meta_Speed for _Anchor = Constants::C_SpeedTierNormal;
+    declare metadata Meta_Speed for Map = Constants::C_SpeedTierNormal;	// map-wide, see InitWeaponPageVariables
     declare metadata Meta_SpeedPower for _Anchor = Constants::C_SpeedDefaultPower;
 
     Meta_Weapon = Weapon;
@@ -1522,6 +1532,7 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
 
         <frame id="Speed" pos="0 -101">
             {{{BigProperty("0 18", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
+            {{{Hint("0 7.8", "Map wide - shared by every checkpoint and spawn")}}}
             {{{Property("0 5.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
         </frame>
 
@@ -1817,6 +1828,7 @@ Void EditSpawn(CAnchorData _Spawn)
 
         <frame id="Speed" pos="0 -101">
             {{{BigProperty("0 18", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
+            {{{Hint("0 7.8", "Map wide - shared by every checkpoint and spawn")}}}
             {{{Property("0 5.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
         </frame>
 
