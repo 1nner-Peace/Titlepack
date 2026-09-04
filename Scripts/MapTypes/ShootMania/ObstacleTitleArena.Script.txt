@@ -532,7 +532,7 @@ Text MakeWindowWithoutEnabled(Text _Title, Text _Content)
 
 Text MakeWindowTall(Text _Title, Text _Content, Boolean _WithTest)
 {
-    return MakeWindowBase(_Title, _Content, True, True, _WithTest, False, 161);
+    return MakeWindowBase(_Title, _Content, True, True, _WithTest, False, 154);
 }
 
 // The launch sub-window: reached from the checkpoint and spawn dialogs, so it goes back to them
@@ -1534,7 +1534,7 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
             {{{Property("7.5 -7.5", "Empty", Checkbox("10 0", "Checkbox_Empty_Weapon"))}}}
         </frame>
 
-        <frame id="Stamina" pos="0 -67.5">
+        <frame id="Stamina" pos="0 -68.5">
             {{{BigProperty("0 18", "Stamina", Select2("0 -3.5", "Limited", "Unlimited", "Stamina_Selector"))}}}
             {{{Property("-12 5.5", "Gain (0-100%)", Entry("0 -5.5", "Entry_Stamina_Gain"))}}}
             {{{Property("12 5.5", "Amount (10-300)", Entry("0 -5.5", "Entry_Stamina_Amount"))}}}
@@ -1543,12 +1543,12 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
             {{{Property("7.5 -7.5", "Empty", Checkbox("10 0", "Checkbox_Empty_Stamina"))}}}
         </frame>
 
-        <frame id="Speed" pos="0 -101">
+        <frame id="Speed" pos="0 -103">
             {{{BigProperty("0 18", "Speed", "")}}}
-            {{{Property("0 9.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
+            {{{Property("0 12", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
         </frame>
 
-        {{{LaunchKeyPicker(_Checkpoint, "0 -110")}}}
+        {{{LaunchKeyPicker(_Checkpoint, "0 -106")}}}
     """;
 
     SetWindow(MakeWindowTall("Edit Checkpoint", Properties, True));
@@ -1825,18 +1825,18 @@ Void EditSpawn(CAnchorData _Spawn)
             {{{Property("-12 5.5", "Gain (0-1000%)", Entry("0 -5.5", "Entry_Weapon_Gain"))}}}
             {{{Property("12 5.5", "Amount (0-10)", Entry("0 -5.5", "Entry_Weapon_Amount"))}}}
         </frame>
-        <frame id="Stamina" pos="0 -67.5">
+        <frame id="Stamina" pos="0 -68.5">
             {{{BigProperty("0 18", "Stamina", Select2("0 -3.5", "Limited", "Unlimited", "Stamina_Selector"))}}}
             {{{Property("-12 5.5", "Gain (0-100%)", Entry("0 -5.5", "Entry_Stamina_Gain"))}}}
             {{{Property("12 5.5", "Amount (10-300)", Entry("0 -5.5", "Entry_Stamina_Amount"))}}}
         </frame>
 
-        <frame id="Speed" pos="0 -101">
+        <frame id="Speed" pos="0 -103">
             {{{BigProperty("0 18", "Speed", "")}}}
-            {{{Property("0 9.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
+            {{{Property("0 12", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
         </frame>
 
-        {{{LaunchKeyPicker(_Spawn, "0 -110")}}}
+        {{{LaunchKeyPicker(_Spawn, "0 -106")}}}
     """;
 
     SetWindow(MakeWindowTall("Edit Spawn", Properties, False));
