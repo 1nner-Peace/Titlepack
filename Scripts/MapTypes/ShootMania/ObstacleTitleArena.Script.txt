@@ -309,15 +309,6 @@ Text Property(Text _Position, Text _Title, Text _Content)
     """;
 }
 
-// A note under a control, saying something about it that its title has no room for.
-Text Hint(Text _Position, Text _Text)
-{
-    return """
-        <label pos="{{{_Position}}}" size="75 4" text="{{{_Text}}}" textsize="1" opacity="0.6"
-            halign="center" valign="center2" class="text"/>
-    """;
-}
-
 // Property with the title on the same row as the content, right-aligned just left of it.
 // _Position is the row centre line, so the content is placed around y = 0, not below it.
 Text InlineProperty(Text _Position, Text _Title, Text _Content)
@@ -606,7 +597,6 @@ Text Private_WeaponUpdate()
     declare Integer Stamina for Page;
     declare Real Stamina_Gain for Page;
     declare Real Stamina_Amount for Page;
-    declare Integer Speed_Tier for Page;
     declare Real Speed_Power for Page;
 
     if (Stamina == 0) Stamina = 1;
@@ -617,12 +607,10 @@ Text Private_WeaponUpdate()
     declare Quad_Stamina_Selector <=> (Frame_Properties.GetFirstChild("Stamina_Selector") as CMlQuad);
     declare Entry_Stamina_Gain <=> (Frame_Properties.GetFirstChild("Entry_Stamina_Gain") as CMlEntry);
     declare Entry_Stamina_Amount <=> (Frame_Properties.GetFirstChild("Entry_Stamina_Amount") as CMlEntry);
-    declare Quad_Speed_Selector <=> (Frame_Properties.GetFirstChild("Speed_Selector") as CMlQuad);
     declare Entry_Speed_Power <=> (Frame_Properties.GetFirstChild("Entry_Speed_Power") as CMlEntry);
 
     Quad_Weapon_Selector.RelativePosition_V3.X = -40. + Weapon*16.;
     Quad_Stamina_Selector.RelativePosition_V3.X = -20 + (Stamina-1)*20.;
-    Quad_Speed_Selector.RelativePosition_V3.X = -40. + Speed_Tier*20.;
 
     Entry_Weapon_Gain.SetText(TL::ToText(Weapon_Gain*100), False);
     Entry_Weapon_Amount.SetText(TL::ToText(Weapon_Amount), False);
@@ -685,7 +673,6 @@ Void InitWeaponPageVariables(CAnchorData _Anchor)
     declare Integer Stamina for ManialinkPage;
     declare Real Stamina_Gain for ManialinkPage;
     declare Real Stamina_Amount for ManialinkPage;
-    declare Integer Speed_Tier for ManialinkPage;
     declare Real Speed_Power for ManialinkPage;
 
     declare metadata Meta_Weapon for _Anchor = 1;
@@ -694,10 +681,9 @@ Void InitWeaponPageVariables(CAnchorData _Anchor)
     declare metadata Meta_Stamina for _Anchor = 0;
     declare metadata Meta_Stamina_Gain for _Anchor = 1.0;
     declare metadata Meta_Stamina_Amount for _Anchor = 1.0;
-    // The tier is one value for the whole map - a model's gameplay params only take hold when a
-    // player spawns, so it cannot change per section. Both keys are absent on maps saved before
-    // speed was editable, and these defaults are the stock movement those maps were built for.
-    declare metadata Meta_Speed for Map = Constants::C_SpeedTierNormal;
+    // What a section carries is the multiplier; the tier it scales is one value for the whole map,
+    // edited in the map window (see EditMap). The key is absent on maps saved before speed was
+    // editable, and this default is the stock movement those maps were built for.
     declare metadata Meta_SpeedPower for _Anchor = Constants::C_SpeedDefaultPower;
 
     Weapon = Meta_Weapon;
@@ -706,12 +692,11 @@ Void InitWeaponPageVariables(CAnchorData _Anchor)
     Stamina = Meta_Stamina;
     Stamina_Gain = Meta_Stamina_Gain;
     Stamina_Amount = Meta_Stamina_Amount;
-    Speed_Tier = Meta_Speed;
     Speed_Power = Meta_SpeedPower;
 }
 
 
-Void SaveWeaponVariables(CAnchorData _Anchor, Integer Weapon, Real Weapon_Gain, Integer Weapon_Amount, Integer Stamina, Real Stamina_Gain, Real Stamina_Amount, Integer Speed_Tier, Real Speed_Power)
+Void SaveWeaponVariables(CAnchorData _Anchor, Integer Weapon, Real Weapon_Gain, Integer Weapon_Amount, Integer Stamina, Real Stamina_Gain, Real Stamina_Amount, Real Speed_Power)
 {
     declare metadata Meta_Weapon for _Anchor = 1;
     declare metadata Meta_Weapon_Gain for _Anchor = 1.0;
@@ -719,7 +704,6 @@ Void SaveWeaponVariables(CAnchorData _Anchor, Integer Weapon, Real Weapon_Gain, 
     declare metadata Meta_Stamina for _Anchor = 0;
     declare metadata Meta_Stamina_Gain for _Anchor = 1.0;
     declare metadata Meta_Stamina_Amount for _Anchor = 1.0;
-    declare metadata Meta_Speed for Map = Constants::C_SpeedTierNormal;	// map-wide, see InitWeaponPageVariables
     declare metadata Meta_SpeedPower for _Anchor = Constants::C_SpeedDefaultPower;
 
     Meta_Weapon = Weapon;
@@ -730,8 +714,6 @@ Void SaveWeaponVariables(CAnchorData _Anchor, Integer Weapon, Real Weapon_Gain, 
     Meta_Stamina_Amount = ML::Clamp(Stamina_Amount, .1, 3.);
     // Clamped here so the mode can apply what it reads without checking - the same deal
     // Meta_Stamina_Amount already has with Weapons::ApplyEffects.
-    declare SpeedModels = Constants::C_SpeedModels;	// .count is not readable off the constant itself
-    Meta_Speed = ML::Clamp(Speed_Tier, 0, SpeedModels.count - 1);
     Meta_SpeedPower = ML::Clamp(Speed_Power, Constants::C_SpeedPowerMin, Constants::C_SpeedDefaultPower);
 }
 
@@ -744,10 +726,9 @@ Void SaveWeaponPageVariables(CAnchorData _Anchor)
     declare Integer Stamina for ManialinkPage;
     declare Real Stamina_Gain for ManialinkPage;
     declare Real Stamina_Amount for ManialinkPage;
-    declare Integer Speed_Tier for ManialinkPage;
     declare Real Speed_Power for ManialinkPage;
 
-    SaveWeaponVariables(_Anchor, Weapon, Weapon_Gain, Weapon_Amount, Stamina, Stamina_Gain, Stamina_Amount, Speed_Tier, Speed_Power);
+    SaveWeaponVariables(_Anchor, Weapon, Weapon_Gain, Weapon_Amount, Stamina, Stamina_Gain, Stamina_Amount, Speed_Power);
 }
 
 
@@ -942,6 +923,10 @@ Void EditMap()
     declare metadata Integer Meta_ForceFastRS for Map = 0;
     declare metadata Integer Meta_Invulnerability for Map = 2000;
     declare metadata Boolean Meta_LB_Enabled for Map = True;
+    // The tier is one value for the whole map - a model's gameplay params only take hold when a
+    // player spawns, so it cannot change per section. What a checkpoint or spawn carries is the
+    // multiplier that scales it (see InitWeaponPageVariables).
+    declare metadata Integer Meta_Speed for Map = Constants::C_SpeedTierNormal;
 
     declare PvP_Weapons for ManialinkPage = Meta_PvP_Weapons;
     declare PvP_Collisions for ManialinkPage = Meta_PvP_Collisions;
@@ -949,18 +934,20 @@ Void EditMap()
     declare ForceFastRS for ManialinkPage = Meta_ForceFastRS;
     declare Invulnerability for ManialinkPage = Meta_Invulnerability;
     declare EnabledLB for ManialinkPage = Meta_LB_Enabled;
+    declare Speed_Tier for ManialinkPage = Meta_Speed;
 
     /// --- Manialink
     declare Properties = """
         <frame id="Map" pos="0 15">
-            {{{BigProperty("0 5", "Settings to enable", "")}}}
-            {{{Property("-20 -2.5", "PvP Weapons", Checkbox("13 0", "Checkbox_PvP_Weapons"))}}}
-            {{{Property("12.5 -2.5", "PvP Collisions", Checkbox("13 0", "Checkbox_PvP_Collisions"))}}}
-            {{{Property("-20 -10", "Same-Wall WJ", Checkbox("13 0", "Checkbox_SameWallJump"))}}}
-            {{{Property("-20 -17.5", "Fast Respawn", Checkbox("13 0", "Checkbox_ForceFastRS"))}}}
-            {{{BigProperty("0 -28", "Weapon Ready Delay", Entry("0 -7.5", "Entry_Invulnerability"))}}}
-            {{{BigProperty("0 -46.5", "Leaderboard", "")}}}
-            {{{Property("0 -55", "Enabled", Checkbox("13 0", "Checkbox_LB_Enabled"))}}}
+            {{{BigProperty("0 5", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
+            {{{BigProperty("0 -10", "Settings to enable", "")}}}
+            {{{Property("-20 -17.5", "PvP Weapons", Checkbox("13 0", "Checkbox_PvP_Weapons"))}}}
+            {{{Property("12.5 -17.5", "PvP Collisions", Checkbox("13 0", "Checkbox_PvP_Collisions"))}}}
+            {{{Property("-20 -25", "Same-Wall WJ", Checkbox("13 0", "Checkbox_SameWallJump"))}}}
+            {{{Property("-20 -32.5", "Fast Respawn", Checkbox("13 0", "Checkbox_ForceFastRS"))}}}
+            {{{BigProperty("0 -43", "Weapon Ready Delay", Entry("0 -7.5", "Entry_Invulnerability"))}}}
+            {{{BigProperty("0 -61.5", "Leaderboard", "")}}}
+            {{{Property("0 -70", "Enabled", Checkbox("13 0", "Checkbox_LB_Enabled"))}}}
         </frame>
     """;
 
@@ -979,6 +966,7 @@ Void EditMap()
         declare Integer ForceFastRS for Page;
         declare Integer Invulnerability for Page;
         declare Boolean EnabledLB for Page;
+        declare Integer Speed_Tier for Page;
 
         declare Label_PvP_Weapons <=> (Page.GetFirstChild("Checkbox_PvP_Weapons") as CMlLabel);
         declare Label_PvP_Collisions <=> (Page.GetFirstChild("Checkbox_PvP_Collisions") as CMlLabel);
@@ -986,6 +974,7 @@ Void EditMap()
         declare Label_ForceFastRS <=> (Page.GetFirstChild("Checkbox_ForceFastRS") as CMlLabel);
         declare Entry_Invulnerability <=> (Page.GetFirstChild("Entry_Invulnerability") as CMlEntry);
         declare Label_LB_Enabled <=> (Page.GetFirstChild("Checkbox_LB_Enabled") as CMlLabel);
+        declare Quad_Speed_Selector <=> (Page.GetFirstChild("Speed_Selector") as CMlQuad);
 
         if (!EnabledLB && Label_LB_Enabled.Value != "") {
             Label_LB_Enabled.SetText("");
@@ -1025,6 +1014,7 @@ Void EditMap()
             Label_ForceFastRS.SetText("");
         }
 
+        Quad_Speed_Selector.RelativePosition_V3.X = -40. + Speed_Tier*20.;
         Entry_Invulnerability.SetText(TL::ToText(Invulnerability), False);
 
         SendCustomEvent("Event_Save_Map", Text[]);
@@ -1037,6 +1027,7 @@ Void EditMap()
         declare Integer ForceFastRS for Page;
         declare Integer Invulnerability for Page;
         declare Boolean EnabledLB for Page;
+        declare Integer Speed_Tier for Page;
 
         declare NeedUpdate = False;
         UpdateView();
@@ -1073,6 +1064,12 @@ Void EditMap()
 
                             case "Checkbox_LB_Enabled":
                                 EnabledLB = !EnabledLB;
+
+                            // Ids come from Select4Ids, so a slot's suffix is the tier itself
+                            case "Speed_Tier0" : Speed_Tier = 0;
+                            case "Speed_Tier1" : Speed_Tier = 1;
+                            case "Speed_Tier2" : Speed_Tier = 2;
+                            case "Speed_Tier3" : Speed_Tier = 3;
                         }
 
                         NeedUpdate = True;
@@ -1102,6 +1099,7 @@ Void SaveMapSettings()
     declare metadata Integer Meta_ForceFastRS for Map;
     declare metadata Integer Meta_Invulnerability for Map;
     declare metadata Boolean Meta_LB_Enabled for Map;
+    declare metadata Integer Meta_Speed for Map;
 
     declare Boolean PvP_Weapons for ManialinkPage;
     declare Boolean PvP_Collisions for ManialinkPage;
@@ -1109,6 +1107,7 @@ Void SaveMapSettings()
     declare Integer ForceFastRS for ManialinkPage;
     declare Integer Invulnerability for ManialinkPage;
     declare Boolean EnabledLB for ManialinkPage;
+    declare Integer Speed_Tier for ManialinkPage;
 
     Meta_PvP_Weapons = PvP_Weapons;
     Meta_PvP_Collisions = PvP_Collisions;
@@ -1116,6 +1115,9 @@ Void SaveMapSettings()
     Meta_ForceFastRS = ForceFastRS;
     Meta_Invulnerability = Invulnerability;
     Meta_LB_Enabled = EnabledLB;
+    // Clamped here so the mode can apply what it reads without checking.
+    declare SpeedModels = Constants::C_SpeedModels;	// .count is not readable off the constant itself
+    Meta_Speed = ML::Clamp(Speed_Tier, 0, SpeedModels.count - 1);
 }
 
 Void EditObjectives()
@@ -1531,9 +1533,8 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
         </frame>
 
         <frame id="Speed" pos="0 -101">
-            {{{BigProperty("0 18", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
-            {{{Hint("0 7.8", "Map wide - shared by every checkpoint and spawn")}}}
-            {{{Property("0 5.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
+            {{{BigProperty("0 18", "Speed", "")}}}
+            {{{Property("0 9.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
         </frame>
 
         {{{LaunchKeyPicker(_Checkpoint, "0 -110")}}}
@@ -1634,7 +1635,6 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
         declare Integer Stamina for Page;
         declare Real Stamina_Gain for Page;
         declare Real Stamina_Amount for Page;
-        declare Integer Speed_Tier for Page;
         declare Real Speed_Power for Page;
 
         declare NeedUpdate = False;
@@ -1693,12 +1693,6 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
                             case "Missile" : Weapon = 4;
                             case "Limited" : Stamina = 1;
                             case "Unlimited" : Stamina = 2;
-
-                            // Ids come from Select4Ids, so a slot's suffix is the tier itself
-                            case "Speed_Tier0" : Speed_Tier = 0;
-                            case "Speed_Tier1" : Speed_Tier = 1;
-                            case "Speed_Tier2" : Speed_Tier = 2;
-                            case "Speed_Tier3" : Speed_Tier = 3;
 
                             case "Checkbox_Fill_Weapon": {
                                 RefillWeapon = !RefillWeapon;
@@ -1827,9 +1821,8 @@ Void EditSpawn(CAnchorData _Spawn)
         </frame>
 
         <frame id="Speed" pos="0 -101">
-            {{{BigProperty("0 18", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
-            {{{Hint("0 7.8", "Map wide - shared by every checkpoint and spawn")}}}
-            {{{Property("0 5.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
+            {{{BigProperty("0 18", "Speed", "")}}}
+            {{{Property("0 9.5", "Multiplier (0.1-1)", Entry("0 -5.5", "Entry_Speed_Power"))}}}
         </frame>
 
         {{{LaunchKeyPicker(_Spawn, "0 -110")}}}
@@ -1889,7 +1882,6 @@ Void EditSpawn(CAnchorData _Spawn)
         declare Integer Stamina for Page;
         declare Real Stamina_Gain for Page;
         declare Real Stamina_Amount for Page;
-        declare Integer Speed_Tier for Page;
         declare Real Speed_Power for Page;
         declare NeedUpdate = False;
         UpdateView();
@@ -1946,12 +1938,6 @@ Void EditSpawn(CAnchorData _Spawn)
                             case "Missile"   : Weapon = 4;
                             case "Limited"   : Stamina = 1;
                             case "Unlimited" : Stamina = 2;
-
-                            // Ids come from Select4Ids, so a slot's suffix is the tier itself
-                            case "Speed_Tier0" : Speed_Tier = 0;
-                            case "Speed_Tier1" : Speed_Tier = 1;
-                            case "Speed_Tier2" : Speed_Tier = 2;
-                            case "Speed_Tier3" : Speed_Tier = 3;
                         }
 
                         NeedUpdate = True;
