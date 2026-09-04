@@ -50,12 +50,48 @@
 // Weapons and ObstacleLib can see (Items already includes ObstacleLib, so it cannot be used).
 declare Ident[] G_SpeedModelIds;
 
+// The one model the whole map wears and the SpeedCoef baked into it, settled once per map by
+// SetSpeedMapTier because a model's params only take hold on a real spawn (see Constants::C_SpeedModels).
+// NullId means "this map needs no model", which is also the state before any map is prepared, so a
+// reader can never be handed a model the players are not actually wearing.
+declare Ident G_SpeedMapModelId;
+declare Real G_SpeedMapCoef;
+
 /*********************************************
   FUNCTIONS
  *********************************************/
 
 Void SetSpeedModelIds(Ident[] _Ids) {
     G_SpeedModelIds = _Ids;
+}
+
+/**
+ * Dress the map in the tier it needs - its fastest, so every other section can be scaled down
+ * from there. Called once per map by ObstacleLib::PrepareMap, before anyone has spawned.
+ *
+ * Anything the players cannot actually end up wearing falls back to the normal tier, item and coef
+ * together: the coef has to describe the model that is really on them, or every section would be
+ * scaled against a ceiling that is not there.
+ */
+Void SetSpeedMapTier(Integer _Tier) {
+    declare SpeedCoefs = Constants::C_SpeedCoefs;
+    G_SpeedMapModelId = NullId;
+    G_SpeedMapCoef = SpeedCoefs[Constants::C_SpeedTierNormal];
+
+    if (_Tier == Constants::C_SpeedTierNormal) return;
+    if (!SpeedCoefs.existskey(_Tier) || !G_SpeedModelIds.existskey(_Tier)) return;
+    if (G_SpeedModelIds[_Tier] == NullId) return;
+
+    G_SpeedMapModelId = G_SpeedModelIds[_Tier];
+    G_SpeedMapCoef = SpeedCoefs[_Tier];
+}
+
+/**
+ * The model every player on this map wears, or NullId when the map asks for none - which leaves
+ * the model slot to whatever else wants it, e.g. the invisible skin.
+ */
+Ident GetSpeedMapModelId() {
+    return G_SpeedMapModelId;
 }
 
 Void setTimeInLb(CSmPlayer _Player, Integer _TimeInLb) {
@@ -252,9 +288,8 @@ Void SetSectionAnchor(CSmPlayer _Player, Ident _Value) {
 
 /**
  * Speed of the section the player is running, read off its anchor by Weapons::ApplyEffects.
- * The tier picks the bot item that sets the ceiling, the power scales down from it; both are
- * re-asserted every tick by ObstacleLib::UpdatePlayersModel, because a respawn - and possibly
- * a model change - puts the model's own values back.
+ * Held as the author wrote it - the tier the section asks for and the power scaling it - and
+ * turned into a single SpeedPower by GetAppliedSpeedPower, which is what the player is given.
  */
 Integer GetSpeedTier(CSmPlayer _Player) {
     declare Integer SpeedTier for _Player = Constants::C_SpeedTierNormal;
@@ -277,15 +312,24 @@ Void SetSpeedPower(CSmPlayer _Player, Real _Value) {
 }
 
 /**
- * The bot item this player's tier needs forced, or NullId when the tier asks for nothing -
- * either the normal tier (SpeedCoef 1 is what the engine already does) or a tier whose item
- * failed to load. NullId leaves the model slot to whatever else wants it, e.g. the invisible skin.
+ * The SpeedPower that makes this player run their section's speed while wearing the map's model:
+ * the section's coef as a fraction of the map's, scaled by the power the author asked for.
+ *
+ * Exact for any section within a decade of the map's fastest one, because that is the decade
+ * SpeedPower covers. A section slower than that cannot be reached and runs at the floor instead -
+ * ObstacleLib::PrepareMap says so in the log when a map is authored that way.
  */
-Ident GetSpeedModelId(CSmPlayer _Player) {
+Real GetAppliedSpeedPower(CSmPlayer _Player) {
+    declare SpeedCoefs = Constants::C_SpeedCoefs;
     declare Tier = GetSpeedTier(_Player);
-    if (Tier == Constants::C_SpeedTierNormal) return NullId;
-    if (!G_SpeedModelIds.existskey(Tier)) return NullId;
-    return G_SpeedModelIds[Tier];
+    if (!SpeedCoefs.existskey(Tier)) return Constants::C_SpeedDefaultPower;
+
+    // Before the first map is prepared no model is worn, which is the normal tier's coef
+    declare MapCoef = SpeedCoefs[Constants::C_SpeedTierNormal];
+    if (G_SpeedMapCoef > 0.) MapCoef = G_SpeedMapCoef;
+
+    declare Power = GetSpeedPower(_Player) * SpeedCoefs[Tier] / MapCoef;
+    return MathLib::Clamp(Power, Constants::C_SpeedPowerMin, Constants::C_SpeedDefaultPower);
 }
 
 

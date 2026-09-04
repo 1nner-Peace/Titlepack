@@ -722,7 +722,7 @@ Void SaveWeaponVariables(CAnchorData _Anchor, Integer Weapon, Real Weapon_Gain, 
     // Meta_Stamina_Amount already has with Weapons::ApplyEffects.
     declare SpeedModels = Constants::C_SpeedModels;	// .count is not readable off the constant itself
     Meta_Speed = ML::Clamp(Speed_Tier, 0, SpeedModels.count - 1);
-    Meta_SpeedPower = ML::Clamp(Speed_Power, 0.1, 1.);
+    Meta_SpeedPower = ML::Clamp(Speed_Power, Constants::C_SpeedPowerMin, Constants::C_SpeedDefaultPower);
 }
 
 

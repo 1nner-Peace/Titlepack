@@ -217,7 +217,7 @@ ItemList_Begin();
 // G_InvisibleSkinId = ItemList_Add("StadiumCar");
 G_InvisibleSkinId = ItemList_AddWithSkin("DefaultPlayerModel", Constants::C_InvisibleSkin);
 // A tier keeps its index even when it loads nothing, so the empty normal-tier slot still takes
-// one up: Player::GetSpeedModelId indexes the table by tier. Player owns it from here on.
+// one up: Player::SetSpeedMapTier indexes the table by tier. Player owns it from here on.
 declare Ident[] SpeedBotModelIds = [];
 foreach (SpeedModel in Constants::C_SpeedModels) {
     if (SpeedModel == "") {

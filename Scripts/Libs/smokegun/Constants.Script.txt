@@ -15,8 +15,17 @@
 // forcing a character item instead - a bot derived from ArenaPlayer carries gameplay params, and
 // ForceModelId applies them to a real player. The invisible skin is baked into each item because
 // ForceModelId is a single slot a forced skin would otherwise contend for.
+//
+// A model's gameplay params are read once, when the player entity is created, so a model change
+// only lands on a real spawn - not on a fast respawn, and never on crossing a checkpoint. The map
+// therefore wears ONE model, its fastest tier, settled before anyone spawns, and each section's
+// speed is delivered by SpeedPower alone, which does apply live. The tiers sit a decade apart and
+// SpeedPower spans exactly one decade, so a section within a decade of the map's fastest one is
+// reproduced exactly; anything below that is clamped (see Player::GetAppliedSpeedPower).
+//
 // Index = speed tier, and the tier is what the editor's picker stores (see Meta_Speed).
 #Const C_SpeedTierNormal 1					// SpeedCoef 1 is the engine default, so this tier forces no model at all
+#Const C_SpeedPowerMin 0.1					// SpeedPower's range is 0.1-1.0, so the default below doubles as its maximum
 #Const C_SpeedDefaultPower 1.0
 // The C_SpeedTierNormal slot is empty on purpose (see above); loaders skip it but keep its index.
 #Const C_SpeedModels [
@@ -25,6 +34,9 @@
     "InvisibleBotSpeed10.Item.Gbx",		// 10
     "InvisibleBotSpeed100.Item.Gbx"		// 100
 ]
+// The SpeedCoef baked into each item above, same index. Speed is proportional to it, so a section
+// is expressed as its coef over the map's - and that ratio is the SpeedPower the player is given.
+#Const C_SpeedCoefs [0.1, 1.0, 10.0, 100.0]
 
 #Const C_Offzone01 "Offzone\\Visible\\Offzone#01.Item.gbx"
 #Const C_Offzone10 "Offzone\\Visible\\Offzone#10.Item.gbx"

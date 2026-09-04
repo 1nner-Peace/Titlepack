@@ -177,26 +177,26 @@ Void NewPlayer(CSmPlayer _Player)
 }
 
 /**
- * Keep every player wearing the model their section asks for. _FallbackId is what to force when
- * the section wants no model of its own - the invisible skin, or NullId for the stock player.
+ * Keep every player wearing the map's speed model and running the speed of the section they are
+ * in. _FallbackId is what to force when the map asks for no model of its own - the invisible
+ * skin, or NullId for the stock player.
  *
- * The speed values are re-asserted here rather than where they are read, because this is the one
- * place that writes ForceModelId: a respawn puts the model's own SpeedPower back, and a model
- * change may do the same, so driving both off player state every tick makes the order they land
- * in irrelevant.
+ * SpeedPower is re-asserted here rather than where it is read, because this is the one place that
+ * writes ForceModelId: a respawn puts the model's own SpeedPower back, so driving it off player
+ * state every tick makes the order the two land in irrelevant.
  */
 Void UpdatePlayersModel(Ident _FallbackId) {
-    foreach (Player in Players) {
-        declare ModelId = Player::GetSpeedModelId(Player);
-        if (ModelId == NullId) {
-            ModelId = _FallbackId;
-        }
+    declare ModelId = Player::GetSpeedMapModelId();
+    if (ModelId == NullId) {
+        ModelId = _FallbackId;
+    }
 
+    foreach (Player in Players) {
         if (Player.ForceModelId != ModelId) {
             Player.ForceModelId = ModelId;
         }
 
-        declare SpeedPower = Player::GetSpeedPower(Player);
+        declare SpeedPower = Player::GetAppliedSpeedPower(Player);
         if (Player.SpeedPower != SpeedPower) {
             Player.SpeedPower = SpeedPower;
         }
@@ -232,6 +232,35 @@ Boolean PrepareMap(Text ModeName) {
             declare metadata Meta_Randomize for Landmark = False;
             if (Meta_Randomize) G_IsRandomizerMap = True;
         }
+    }
+
+    // The whole map wears one model, the fastest tier any of its anchors asks for, because a model's
+    // gameplay params are only read when a player entity is created (see Constants::C_SpeedModels).
+    // Settled here, before anyone has spawned; every section is scaled down from it by SpeedPower.
+    declare SpeedCoefs = Constants::C_SpeedCoefs;
+    declare SpeedMapTier = Constants::C_SpeedTierNormal;
+    declare SpeedSlowest = -1.;
+
+    foreach (Landmark in MapLandmarks) {
+        if (!Tools::IsCheckpoint(Landmark) && !Tools::IsACandidateSpawn(Landmark)) continue;
+
+        declare metadata Meta_Speed for Landmark = Constants::C_SpeedTierNormal;
+        declare metadata Meta_SpeedPower for Landmark = Constants::C_SpeedDefaultPower;
+        if (!SpeedCoefs.existskey(Meta_Speed)) continue;
+
+        if (SpeedCoefs[Meta_Speed] > SpeedCoefs[SpeedMapTier]) SpeedMapTier = Meta_Speed;
+
+        declare SectionSpeed = SpeedCoefs[Meta_Speed] * Meta_SpeedPower;
+        if (SpeedSlowest < 0. || SectionSpeed < SpeedSlowest) SpeedSlowest = SectionSpeed;
+    }
+
+    Player::SetSpeedMapTier(SpeedMapTier);
+
+    // SpeedPower bottoms out at 0.1, so a section more than a decade slower than the map's fastest
+    // cannot be reached and will run faster than its author asked for. The margin is there because
+    // an exactly-a-decade section divides out to the floor itself, give or take a float.
+    if (SpeedSlowest >= 0. && SpeedSlowest / SpeedCoefs[SpeedMapTier] < Constants::C_SpeedPowerMin - 0.0001) {
+        Log::Log("WARNING: This map mixes speeds more than a decade apart, its slowest sections will run too fast!");
     }
 
     // We save checkpoints to CheckpointOrders to count multiple checkpoints with the same order once
