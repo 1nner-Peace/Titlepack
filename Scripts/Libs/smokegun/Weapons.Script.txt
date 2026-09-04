@@ -103,9 +103,17 @@ Void ApplyEffects(CSmPlayer _Player, CSmMapLandmark _Anchor) {
     declare metadata Meta_RefillStamina for _Anchor = False;
     declare metadata Meta_EmptyStamina for _Anchor = False;
 
+    // Maps saved before speed was editable have neither key, and these defaults are exactly the
+    // stock movement they were built for.
+    declare metadata Meta_Speed for _Anchor = Constants::C_SpeedTierNormal;
+    declare metadata Meta_SpeedPower for _Anchor = Constants::C_SpeedDefaultPower;
+
     SetWeapon(_Player, Meta_Weapon, Meta_Weapon_Gain, Meta_Weapon_Amount);
     _Player.StaminaMax = Meta_Stamina_Amount;
     _Player.StaminaGain = Meta_Stamina_Gain;
+
+    Player::SetSpeedTier(_Player, Meta_Speed);
+    Player::SetSpeedPower(_Player, Meta_SpeedPower);
 
     declare StaminaUnlimited for _Player = False;
     StaminaUnlimited = Meta_Stamina == 2;

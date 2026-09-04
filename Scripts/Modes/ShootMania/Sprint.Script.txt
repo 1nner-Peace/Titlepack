@@ -380,9 +380,9 @@ if (LastUpdate + C_SettingsUpdateInterval < Now) {
 }
 
 if (Settings::GetForceInvisibleSkin()) {
-    Obstacle::UpdatePlayersSkin(G_InvisibleSkinId);
+    Obstacle::UpdatePlayersModel(G_InvisibleSkinId);
 } else {
-    Obstacle::UpdatePlayersSkin(NullId);
+    Obstacle::UpdatePlayersModel(NullId);
 }
 
 if (G_State == C_State_Waiting)
@@ -1058,9 +1058,9 @@ Void UpdateSettings() {
         Settings::SetForceInvisibleSkin(ForceInvisibleSkin);
 
         if (Settings::GetForceInvisibleSkin()) {
-            Obstacle::UpdatePlayersSkin(G_InvisibleSkinId);
+            Obstacle::UpdatePlayersModel(G_InvisibleSkinId);
         } else {
-            Obstacle::UpdatePlayersSkin(NullId);
+            Obstacle::UpdatePlayersModel(NullId);
         }
     }
 

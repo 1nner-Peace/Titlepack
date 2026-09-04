@@ -176,14 +176,29 @@ Void NewPlayer(CSmPlayer _Player)
     Hud.ScoresTable.SetColumnValue (_Player.Score, "RS", 0);
 }
 
-Void UpdatePlayersSkin(Ident _SkinId) {
+/**
+ * Keep every player wearing the model their section asks for. _FallbackId is what to force when
+ * the section wants no model of its own - the invisible skin, or NullId for the stock player.
+ *
+ * The speed values are re-asserted here rather than where they are read, because this is the one
+ * place that writes ForceModelId: a respawn puts the model's own SpeedPower back, and a model
+ * change may do the same, so driving both off player state every tick makes the order they land
+ * in irrelevant.
+ */
+Void UpdatePlayersModel(Ident _FallbackId) {
     foreach (Player in Players) {
-        if (Settings::GetForceInvisibleSkin() && Player.ForceModelId != _SkinId) {
-            Player.ForceModelId = _SkinId;
+        declare ModelId = Player::GetSpeedModelId(Player);
+        if (ModelId == NullId) {
+            ModelId = _FallbackId;
         }
 
-        if (!Settings::GetForceInvisibleSkin() && Player.ForceModelId != NullId) {
-            Player.ForceModelId = NullId;
+        if (Player.ForceModelId != ModelId) {
+            Player.ForceModelId = ModelId;
+        }
+
+        declare SpeedPower = Player::GetSpeedPower(Player);
+        if (Player.SpeedPower != SpeedPower) {
+            Player.SpeedPower = SpeedPower;
         }
 
         if (Player.IsHighlighted != Settings::GetEnablePlayerHighlight()) {

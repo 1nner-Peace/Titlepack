@@ -102,7 +102,6 @@
 
 
 declare Ident   G_InvisibleSkinId;
-declare Ident   G_ObstacleModelId;
 declare Boolean G_ForceInvisibleSkin;
 declare Ident   G_WayPointSpawn;
 declare Ident   G_TrampolineActionId;
@@ -217,8 +216,22 @@ log("""@@@@@@@@@@@@@@@@@@@@@@
 ItemList_Begin();
 // G_InvisibleSkinId = ItemList_Add("StadiumCar");
 G_InvisibleSkinId = ItemList_AddWithSkin("DefaultPlayerModel", Constants::C_InvisibleSkin);
-//G_ObstacleModelId = ItemList_AddWithSkin(Constants::C_ObstacleModel, "Profile");
-//G_ObstacleModelId = ItemList_AddWithSkin("DefaultPlayerModel", Constants::C_ObstacleModel);
+// A tier keeps its index even when it loads nothing, so the empty normal-tier slot still takes
+// one up: Player::GetSpeedModelId indexes the table by tier. Player owns it from here on.
+declare Ident[] SpeedBotModelIds = [];
+foreach (SpeedModel in Constants::C_SpeedModels) {
+    if (SpeedModel == "") {
+        SpeedBotModelIds.add(NullId);
+        continue;
+    }
+
+    declare SpeedModelId = ItemList_Add(SpeedModel);
+    if (SpeedModelId == NullId) {
+        log("[Obstacle] Could not load the speed bot model: "^SpeedModel);
+    }
+    SpeedBotModelIds.add(SpeedModelId);
+}
+Player::SetSpeedModelIds(SpeedBotModelIds);
 Items::LoadItems();
 ItemList_End();
 ***
@@ -487,11 +500,7 @@ if (LastUpdate + C_SettingsUpdateInterval < Now) {
     UpdateSettings();
 }
 
-if (Settings::GetForceInvisibleSkin()) {
-    Obstacle::UpdatePlayersSkin(G_InvisibleSkinId);
-} else {
-    Obstacle::UpdatePlayersSkin(NullId);
-}
+Obstacle::UpdatePlayersModel(ForcedModelId());
 
 if (Settings::GetEnableRecords()) {
     Layers::Attach("Records");
@@ -1805,6 +1814,15 @@ Void DestroyUI() {
     DestroyUI(True);
 }
 
+/**
+ * The model to force on a player whose section asks for no speed model of its own
+ * (see ObstacleLib::UpdatePlayersModel).
+ */
+Ident ForcedModelId() {
+    if (Settings::GetForceInvisibleSkin()) return G_InvisibleSkinId;
+    return NullId;
+}
+
 Void UpdateSettings() {
     if (S_TimeLimit != Settings::GetTimeLimit()) {
         Settings::SetTimeLimit(S_TimeLimit);
@@ -1856,21 +1874,13 @@ Void UpdateSettings() {
     if (ForceInvisibleSkin != Settings::GetForceInvisibleSkin()) {
         Settings::SetForceInvisibleSkin(ForceInvisibleSkin);
 
-        if (Settings::GetForceInvisibleSkin()) {
-            Obstacle::UpdatePlayersSkin(G_InvisibleSkinId);
-        } else {
-            Obstacle::UpdatePlayersSkin(NullId);
-        }
+        Obstacle::UpdatePlayersModel(ForcedModelId());
     }
 
     if (S_EnablePlayerHighlight != Settings::GetEnablePlayerHighlight()) {
         Settings::SetEnablePlayerHighlight(S_EnablePlayerHighlight);
 
-        if (Settings::GetForceInvisibleSkin()) {
-            Obstacle::UpdatePlayersSkin(G_InvisibleSkinId);
-        } else {
-            Obstacle::UpdatePlayersSkin(NullId);
-        }
+        Obstacle::UpdatePlayersModel(ForcedModelId());
     }
 
     if (S_ForceRNGSeed != Settings::GetForceRNGSeed()) {

@@ -11,7 +11,20 @@
 #Const C_ItemOffzone "Obstacle\\OffzoneShield.Item.gbx"
 #Const C_ItemAmmo "Obstacle\\Ammo.Item.gbx"
 #Const C_InvisibleSkin "Skins\\Models\\ArenaPlayer\\Invisible.zip"
-#Const C_ObstacleModel "Items\\Speed.Item.Gbx"
+// Player speed: SpeedPower only scales down (0.1-1.0, doc.h:9041), so the ceiling is raised by
+// forcing a character item instead - a bot derived from ArenaPlayer carries gameplay params, and
+// ForceModelId applies them to a real player. The invisible skin is baked into each item because
+// ForceModelId is a single slot a forced skin would otherwise contend for.
+// Index = speed tier, and the tier is what the editor's picker stores (see Meta_Speed).
+#Const C_SpeedTierNormal 1					// SpeedCoef 1 is the engine default, so this tier forces no model at all
+#Const C_SpeedDefaultPower 1.0
+// The C_SpeedTierNormal slot is empty on purpose (see above); loaders skip it but keep its index.
+#Const C_SpeedModels [
+    "InvisibleBotSpeed01.Item.Gbx",		// 0.1
+    "",									// 1
+    "InvisibleBotSpeed10.Item.Gbx",		// 10
+    "InvisibleBotSpeed100.Item.Gbx"		// 100
+]
 
 #Const C_Offzone01 "Offzone\\Visible\\Offzone#01.Item.gbx"
 #Const C_Offzone10 "Offzone\\Visible\\Offzone#10.Item.gbx"

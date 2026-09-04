@@ -41,8 +41,22 @@
 }
 
 /*********************************************
+  GLOBALS
+ *********************************************/
+
+// Speed tier -> the bot item forcing that tier's SpeedCoef, indexed by Constants::C_SpeedModels.
+// Only the mode can fill this: the Idents come from ItemList_Add, which is legal only inside the
+// ItemList_Begin/End of Match_InitServer. It lives here because this is the one library both
+// Weapons and ObstacleLib can see (Items already includes ObstacleLib, so it cannot be used).
+declare Ident[] G_SpeedModelIds;
+
+/*********************************************
   FUNCTIONS
  *********************************************/
+
+Void SetSpeedModelIds(Ident[] _Ids) {
+    G_SpeedModelIds = _Ids;
+}
 
 Void setTimeInLb(CSmPlayer _Player, Integer _TimeInLb) {
     declare Integer TimeInLb for _Player = -1;
@@ -233,6 +247,45 @@ Ident GetSectionAnchor(CSmPlayer _Player) {
 Void SetSectionAnchor(CSmPlayer _Player, Ident _Value) {
     declare Ident SectionAnchor for _Player = NullId;
     SectionAnchor = _Value;
+}
+
+
+/**
+ * Speed of the section the player is running, read off its anchor by Weapons::ApplyEffects.
+ * The tier picks the bot item that sets the ceiling, the power scales down from it; both are
+ * re-asserted every tick by ObstacleLib::UpdatePlayersModel, because a respawn - and possibly
+ * a model change - puts the model's own values back.
+ */
+Integer GetSpeedTier(CSmPlayer _Player) {
+    declare Integer SpeedTier for _Player = Constants::C_SpeedTierNormal;
+    return SpeedTier;
+}
+
+Void SetSpeedTier(CSmPlayer _Player, Integer _Value) {
+    declare Integer SpeedTier for _Player = Constants::C_SpeedTierNormal;
+    SpeedTier = _Value;
+}
+
+Real GetSpeedPower(CSmPlayer _Player) {
+    declare Real SpeedPower for _Player = Constants::C_SpeedDefaultPower;
+    return SpeedPower;
+}
+
+Void SetSpeedPower(CSmPlayer _Player, Real _Value) {
+    declare Real SpeedPower for _Player = Constants::C_SpeedDefaultPower;
+    SpeedPower = _Value;
+}
+
+/**
+ * The bot item this player's tier needs forced, or NullId when the tier asks for nothing -
+ * either the normal tier (SpeedCoef 1 is what the engine already does) or a tier whose item
+ * failed to load. NullId leaves the model slot to whatever else wants it, e.g. the invisible skin.
+ */
+Ident GetSpeedModelId(CSmPlayer _Player) {
+    declare Tier = GetSpeedTier(_Player);
+    if (Tier == Constants::C_SpeedTierNormal) return NullId;
+    if (!G_SpeedModelIds.existskey(Tier)) return NullId;
+    return G_SpeedModelIds[Tier];
 }
 
 
