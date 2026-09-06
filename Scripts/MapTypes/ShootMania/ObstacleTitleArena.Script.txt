@@ -31,6 +31,19 @@ declare Integer G_LaunchEditKey;
 
 declare Text G_CurrentWindow;
 
+// A Real spelled the way a generated page script has to read it. ToText on its own is not enough:
+// a value that comes back without a point ("1") is an Integer literal there, and ML::Clamp has no
+// overload mixing the two. Markup attributes parse leniently, which is why the layout helpers
+// interpolate Reals with a bare ""^ instead.
+Text RealLiteral(Real _Value)
+{
+    declare Literal = TL::ToText(_Value);
+    if (!TL::Find(".", Literal, False, False)) {
+        Literal ^= ".";
+    }
+    return Literal;
+}
+
 Boolean IsEnabled(CAnchorData _Landmark)
 {
     declare metadata Meta_Enabled for _Landmark = True;
@@ -1735,8 +1748,10 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
                             case "Entry_Weapon_Amount": Weapon_Amount = TL::ToInteger(Entry.Value);
                             case "Entry_Stamina_Gain": Stamina_Gain = TL::ToReal(Entry.Value)/100;
                             case "Entry_Stamina_Amount": Stamina_Amount = TL::ToReal(Entry.Value)/100;
-                            // No /100 here, unlike the gains: this one is stored as its own 0.1-1
-                            case "Entry_Speed_Power": Speed_Power = TL::ToReal(Entry.Value);
+                            // No /100 here, unlike the gains: this one is stored as its own 0.1-1.
+                            // Clamped on the way in, the way the trampoline dialog's entries are,
+                            // so the number the field shows back is the one the map will hold.
+                            case "Entry_Speed_Power": Speed_Power = ML::Clamp(TL::ToReal(Entry.Value), {{{RealLiteral(Constants::C_SpeedPowerMin)}}}, {{{RealLiteral(Constants::C_SpeedPowerMax)}}});
                         }
                         NeedUpdate = True;
                     }
@@ -1971,9 +1986,11 @@ Void EditSpawn(CAnchorData _Spawn)
                             case "Entry_Stamina_Amount": {
                                 Stamina_Amount = TL::ToReal(Entry.Value)/100;
                             }
-                            // No /100 here, unlike the gains: this one is stored as its own 0.1-1
+                            // No /100 here, unlike the gains: this one is stored as its own 0.1-1.
+                            // Clamped on the way in, the way the trampoline dialog's entries are,
+                            // so the number the field shows back is the one the map will hold.
                             case "Entry_Speed_Power": {
-                                Speed_Power = TL::ToReal(Entry.Value);
+                                Speed_Power = ML::Clamp(TL::ToReal(Entry.Value), {{{RealLiteral(Constants::C_SpeedPowerMin)}}}, {{{RealLiteral(Constants::C_SpeedPowerMax)}}});
                             }
                         }
                         NeedUpdate = True;
