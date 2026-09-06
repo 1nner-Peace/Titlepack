@@ -407,6 +407,13 @@ Void Private_RestartEffect(CSmPlayer _Player, Ident _SpawnId) {
     // The spawn governs the run's first section until the first checkpoint is captured
     Player::SetSectionAnchor(_Player, _SpawnId);
 
+    // Back to the map's own speed before the section gets a say. The multiplier is player-scoped,
+    // so it outlives the map that set it, and UpdatePlayersModel asserts it every tick - without
+    // this, a map whose spawns never reach ApplyEffects (the legacy branch below) would run at
+    // whatever the last modern map's last section asked for. ApplyEffects overwrites this
+    // immediately on the maps that do reach it.
+    Player::SetSpeedPower(_Player, Constants::C_SpeedDefaultPower);
+
     if (MapVersion <= 2) {
         declare WeaponType = Tools::GetWeaponTypeFromSpawn(Spawn);
         Weapons::ApplyWeaponForCheckpointType(_Player, WeaponType);
