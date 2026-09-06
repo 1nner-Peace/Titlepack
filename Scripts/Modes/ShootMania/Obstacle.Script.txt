@@ -671,8 +671,9 @@ foreach (Event in PendingEvents) {
 							declare Text ItemName for Event.Object = "";
 							if (TL::Find("Trampoline", ItemName, False, True)) {
 								// Arming guard: the OnPlayerTouchesObject event fires across the whole TriggerShape,
-									// but arming must reach every point in it (an 8x8 pad corner is ~5.66m from the anchor).
-									// Kept below a respawn distance so it still drops stale touches queued across a respawn.
+								// but arming must reach every point in it (an 8x8 pad corner is ~5.66m from the
+								// anchor). What drops a touch queued across a respawn is the timer reset in
+								// LoadLaunchActions, not this distance -- a spawn can sit well inside 8m of a pad.
 								if (ML::Distance(Event.Object.AnchorLandmark.Position, Event.Player.Position) <= Constants::C_TrampolineTouchMaxDist) {
 									// Launch gates, set per anchor by the mapper (copied onto the object, clamped, in Items::Place)
 									declare Boolean TrampolineWaitGround for Event.Object = Constants::C_TrampolineDefaultWaitGround;
@@ -1536,6 +1537,16 @@ Void LoadLaunchActions(CSmPlayer _Player) {
     // a player who lands on a pad straight out of a respawn.
     declare Integer TrampolineCooldownEnd for _Player = 0;
     TrampolineCooldownEnd = 0;
+    // The delay timers belong to the run too, and for a second reason: they are the only thing
+    // that decides whether a touch is old enough to fire. A pad the player stood on almost long
+    // enough before dying would otherwise launch them on their first touch back, since the pair
+    // only restarts a timer after C_TrampolineTouchResetGap without touches and a fast respawn
+    // onto the same pad is quicker than that. Dropping them is also what keeps a touch queued
+    // across the respawn from being read as a continuation of the run that just ended.
+    declare Integer[Ident] TrampolineTouchStart for _Player = [];
+    declare Integer[Ident] TrampolineTouchLast for _Player = [];
+    TrampolineTouchStart = [];
+    TrampolineTouchLast = [];
     LoadTrampolineAction(_Player);
 }
 
