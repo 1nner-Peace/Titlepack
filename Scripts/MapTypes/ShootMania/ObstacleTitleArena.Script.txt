@@ -713,9 +713,9 @@ Void SaveWeaponVariables(CAnchorData _Anchor, Integer Weapon, Real Weapon_Gain, 
     Meta_Stamina = Stamina;
     Meta_Stamina_Gain = ML::Clamp(Stamina_Gain, 0., 1.);
     Meta_Stamina_Amount = ML::Clamp(Stamina_Amount, .1, 3.);
-    // Clamped here so the mode can apply what it reads without checking - the same deal
-    // Meta_Stamina_Amount already has with Weapons::ApplyEffects.
-    Meta_SpeedPower = ML::Clamp(Speed_Power, Constants::C_SpeedPowerMin, Constants::C_SpeedDefaultPower);
+    // Clamped again on the way out, so a page that somehow holds an out-of-range value cannot
+    // write one into the map. Player::SetSpeedPower clamps on the reading side too.
+    Meta_SpeedPower = ML::Clamp(Speed_Power, Constants::C_SpeedPowerMin, Constants::C_SpeedPowerMax);
 }
 
 

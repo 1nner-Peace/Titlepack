@@ -6,6 +6,7 @@
  ************************************************/
 
 #Include "TextLib" as TextLib
+#Include "MathLib" as ML
 
 #Include "Libs/miltant/Nadeo_Fork/Json2.Script.txt" as Json
 
@@ -281,17 +282,23 @@ Void SetSectionAnchor(CSmPlayer _Player, Ident _Value) {
 
 /**
  * How much of the map's speed the section the player is running asks for, read off its anchor by
- * Weapons::ApplyEffects and clamped to SpeedPower's range by the editor that wrote it. The tier
- * setting the map's speed is not per player - the whole map wears one model, see SetSpeedMapTier.
+ * Weapons::ApplyEffects. The tier setting the map's speed is not per player - the whole map wears
+ * one model, see SetSpeedMapTier.
  */
 Real GetSpeedPower(CSmPlayer _Player) {
     declare Real SpeedPower for _Player = Constants::C_SpeedDefaultPower;
     return SpeedPower;
 }
 
+/**
+ * Clamped here rather than trusted from the caller, because what reaches this is anchor metadata:
+ * the editor clamps what it writes, but a hand-edited map can carry anything, and 0 or a negative
+ * would be written straight to CSmPlayer::SpeedPower by UpdatePlayersModel and freeze the player
+ * for the rest of the map. Same deal Items::Place gives the trampoline metadata.
+ */
 Void SetSpeedPower(CSmPlayer _Player, Real _Value) {
     declare Real SpeedPower for _Player = Constants::C_SpeedDefaultPower;
-    SpeedPower = _Value;
+    SpeedPower = ML::Clamp(_Value, Constants::C_SpeedPowerMin, Constants::C_SpeedPowerMax);
 }
 
 

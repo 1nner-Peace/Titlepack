@@ -24,8 +24,9 @@
 //
 // Index = speed tier, and the tier is what the editor's picker stores (see Meta_Speed).
 #Const C_SpeedTierNormal 1					// SpeedCoef 1 is the engine default, so this tier forces no model at all
-#Const C_SpeedPowerMin 0.1					// SpeedPower's range is 0.1-1.0, so the default below doubles as its maximum
-#Const C_SpeedDefaultPower 1.0
+#Const C_SpeedPowerMin 0.1					// SpeedPower's own range, straight from the engine (doc.h:9041)
+#Const C_SpeedPowerMax 1.0
+#Const C_SpeedDefaultPower 1.0				// all of the map's speed: what a section that asks for nothing runs at
 // The C_SpeedTierNormal slot is empty on purpose (see above); loaders skip it but keep its index.
 #Const C_SpeedModels [
     "InvisibleBotSpeed01.Item.Gbx",		// 0.1
