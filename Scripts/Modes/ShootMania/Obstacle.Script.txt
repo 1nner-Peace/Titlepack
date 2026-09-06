@@ -500,7 +500,7 @@ if (LastUpdate + C_SettingsUpdateInterval < Now) {
     UpdateSettings();
 }
 
-Obstacle::UpdatePlayersModel(ForcedModelId());
+Obstacle::UpdatePlayersModel(G_InvisibleSkinId);
 
 if (Settings::GetEnableRecords()) {
     Layers::Attach("Records");
@@ -1825,15 +1825,6 @@ Void DestroyUI() {
     DestroyUI(True);
 }
 
-/**
- * The model to force on a player whose section asks for no speed model of its own
- * (see ObstacleLib::UpdatePlayersModel).
- */
-Ident ForcedModelId() {
-    if (Settings::GetForceInvisibleSkin()) return G_InvisibleSkinId;
-    return NullId;
-}
-
 Void UpdateSettings() {
     if (S_TimeLimit != Settings::GetTimeLimit()) {
         Settings::SetTimeLimit(S_TimeLimit);
@@ -1884,14 +1875,10 @@ Void UpdateSettings() {
     declare Boolean ForceInvisibleSkin = S_ForceInvisibleSkin && G_ForceInvisibleSkin;
     if (ForceInvisibleSkin != Settings::GetForceInvisibleSkin()) {
         Settings::SetForceInvisibleSkin(ForceInvisibleSkin);
-
-        Obstacle::UpdatePlayersModel(ForcedModelId());
     }
 
     if (S_EnablePlayerHighlight != Settings::GetEnablePlayerHighlight()) {
         Settings::SetEnablePlayerHighlight(S_EnablePlayerHighlight);
-
-        Obstacle::UpdatePlayersModel(ForcedModelId());
     }
 
     if (S_ForceRNGSeed != Settings::GetForceRNGSeed()) {

@@ -183,6 +183,11 @@ SpawnScreen::CreateScores("Score.Points");
 SpawnInvulnerabilityDuration = 0;
 ItemList_Begin();
 G_InvisibleSkinId = ItemList_AddWithSkin("DefaultPlayerModel", Constants::C_InvisibleSkin);
+// No Player::SetSpeedModelIds here, so Sprint runs every map at the engine's own speed: the tier
+// resolves to NullId for want of a loaded item. The multiplier still applies, though - Sprint
+// respawns through ObstacleLib, which reaches Weapons::ApplyEffects - so a map built around a
+// tier plays here at the fraction of stock speed its sections ask for, not at the speed its
+// author meant. Deliberate for now; wiring the tier in is the loop from Obstacle's InitServer.
 Items::LoadItems();
 ItemList_End();
 ***
@@ -379,11 +384,7 @@ if (LastUpdate + C_SettingsUpdateInterval < Now) {
     UpdateSettings();
 }
 
-if (Settings::GetForceInvisibleSkin()) {
-    Obstacle::UpdatePlayersModel(G_InvisibleSkinId);
-} else {
-    Obstacle::UpdatePlayersModel(NullId);
-}
+Obstacle::UpdatePlayersModel(G_InvisibleSkinId);
 
 if (G_State == C_State_Waiting)
 {
@@ -1056,12 +1057,6 @@ Void UpdateSettings() {
     declare Boolean ForceInvisibleSkin = S_ForceInvisibleSkin && G_ForceInvisibleSkin;
     if (ForceInvisibleSkin != Settings::GetForceInvisibleSkin()) {
         Settings::SetForceInvisibleSkin(ForceInvisibleSkin);
-
-        if (Settings::GetForceInvisibleSkin()) {
-            Obstacle::UpdatePlayersModel(G_InvisibleSkinId);
-        } else {
-            Obstacle::UpdatePlayersModel(NullId);
-        }
     }
 
     if (S_RoundLimit != Settings::GetRoundLimit()) {

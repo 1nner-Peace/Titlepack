@@ -184,17 +184,20 @@ Void NewPlayer(CSmPlayer _Player)
 
 /**
  * Keep every player wearing the map's speed model and running the speed of the section they are
- * in. _FallbackId is what to force when the map asks for no model of its own - the invisible
- * skin, or NullId for the stock player.
+ * in. _InvisibleSkinId is the mode's own invisible player model: the Ident has to be passed in
+ * because ItemList_Add is only legal inside a mode's Match_InitServer, but whether it is worn is
+ * decided here, so no caller has to reason about which model wins the one ForceModelId slot.
  *
  * SpeedPower is re-asserted here rather than where it is read, because this is the one place that
  * writes ForceModelId: a respawn puts the model's own SpeedPower back, so driving it off player
  * state every tick makes the order the two land in irrelevant.
  */
-Void UpdatePlayersModel(Ident _FallbackId) {
+Void UpdatePlayersModel(Ident _InvisibleSkinId) {
+    // A speed map takes the slot outright - its model has the invisible skin baked in, so there is
+    // nothing left for the setting to ask for (see Constants::C_SpeedModels).
     declare ModelId = Player::GetSpeedMapModelId();
-    if (ModelId == NullId) {
-        ModelId = _FallbackId;
+    if (ModelId == NullId && Settings::GetForceInvisibleSkin()) {
+        ModelId = _InvisibleSkinId;
     }
 
     foreach (Player in Players) {
