@@ -34,6 +34,10 @@
     "InvisibleBotSpeed10.Item.Gbx",		// 10
     "InvisibleBotSpeed100.Item.Gbx"		// 100
 ]
+// What the editor's picker shows for each tier. Index-parallel with C_SpeedModels: the two are one
+// list in two halves, so a tier added to either needs the same slot in the other. The picker sizes
+// itself off this one, and the mode loads that one.
+#Const C_SpeedTierLabels ["0.1", "1", "10", "100"]
 
 #Const C_Offzone01 "Offzone\\Visible\\Offzone#01.Item.gbx"
 #Const C_Offzone10 "Offzone\\Visible\\Offzone#10.Item.gbx"

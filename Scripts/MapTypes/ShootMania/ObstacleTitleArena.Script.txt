@@ -21,6 +21,10 @@
 #Const C_LaunchDirArrowSize "5.5"
 #Const C_LaunchDirIdPrefix "LaunchDir"
 
+// Width of a SelectIds bar. Shared with its two page-script halves so the bar, the highlight that
+// moves along it and the arms that read a click all divide the same width by the same count.
+#Const C_SelectIdsWidth 60.
+
 declare Ident G_LastAnchorId;
 declare Ident[] G_AnchorCache;
 
@@ -166,32 +170,83 @@ Text Select4(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _
     """;
 }
 
-// Like Select4, but a slot's id is _IdPrefix ^ index rather than its own text, so the options
-// can read as bare numbers ("0.1", "1") without those becoming control ids. Same id convention
-// as Select8Arrows, and the click handler reads the picked index off the id. The bar is
-// narrower than Select4's since bare numbers need less room than words.
-Text Select4Ids(Text _Position, Text _IdPrefix, Text[] _Options, Text _Selector)
+Real SelectIdsSlotWidth(Integer _Count)
 {
+    declare Total = C_SelectIdsWidth;
+    return Total / ML::ToReal(_Count);
+}
+
+Real SelectIdsFirstX()
+{
+    declare Total = C_SelectIdsWidth;
+    return -Total / 2.;
+}
+
+// Like Select4, but a slot's id is _IdPrefix ^ index rather than its own text, so the options can
+// read as bare numbers ("0.1", "1") without those becoming control ids. Same id convention as
+// Select8Arrows. Sized off _Options, so a list that grows needs no edit here, in SelectIdsUpdate
+// or in SelectIdsCases. The bar is narrower than Select4's since bare numbers need less room than
+// words.
+Text SelectIds(Text _Position, Text _IdPrefix, Text[] _Options, Text _Selector)
+{
+    declare FirstX = SelectIdsFirstX();
+    declare SlotWidth = SelectIdsSlotWidth(_Options.count);
+    declare TextSlotWidth = ""^SlotWidth;
+
     declare Labels = "";
-    for (Index, 0, 3) {
+    foreach (Index => Option in _Options) {
         declare SlotId = _IdPrefix ^ Index;
-        declare SlotX = ""^(-22.5 + Index * 15.);
-        declare SlotText = _Options[Index];
+        declare SlotX = ""^(FirstX + SlotWidth / 2. + ML::ToReal(Index) * SlotWidth);
         Labels ^= """
-            <label id="{{{SlotId}}}" pos="{{{SlotX}}} -2" size="15 6" text="{{{SlotText}}}"
+            <label id="{{{SlotId}}}" pos="{{{SlotX}}} -2" size="{{{TextSlotWidth}}} 6" text="{{{Option}}}"
                 halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
         """;
     }
 
+    declare TextBar = ""^C_SelectIdsWidth;
+    declare TextBacking = ""^(C_SelectIdsWidth + 1.);
+    declare TextFirstX = ""^FirstX;
     return """
         <frame pos="{{{_Position}}}">
-            <frame clip="True" clipposn="0 -2.5" clipsizen="60 5" halign="center">
+            <frame clip="True" clipposn="0 -2.5" clipsizen="{{{TextBar}}} 5" halign="center">
                 {{{Labels}}}
-                <quad  id="{{{_Selector}}}" pos="-30 1"   size="15 7" bgcolor="4777C1FF"/>
+                <quad  id="{{{_Selector}}}" pos="{{{TextFirstX}}} 1"   size="{{{TextSlotWidth}}} 7" bgcolor="4777C1FF"/>
             </frame>
-            <quad pos="0 0.5" size="61 6.1" bgcolor="797979AA" halign="center"/>
+            <quad pos="0 0.5" size="{{{TextBacking}}} 6.1" bgcolor="797979AA" halign="center"/>
         </frame>
     """;
+}
+
+// The page-script half of SelectIds: putting the highlight on the slot the value names. Emitted
+// here rather than written out in each dialog for the same reason CheckboxUpdate is - a page
+// script cannot call the plugin's functions, only take a copy of one - and emitted per count so
+// the step it moves by is the step SelectIds laid the slots out on.
+Text SelectIdsUpdate(Integer _Count)
+{
+    declare FirstX = RealLiteral(SelectIdsFirstX());
+    declare SlotWidth = RealLiteral(SelectIdsSlotWidth(_Count));
+    return """
+    Void SetSelectIds(Text _SelectorId, Integer _Index) {
+        declare Quad_Selector <=> (Page.GetFirstChild(_SelectorId) as CMlQuad);
+        Quad_Selector.RelativePosition_V3.X = {{{FirstX}}} + _Index * {{{SlotWidth}}};
+    }
+    """;
+}
+
+// The handler half: one arm per slot, so a click becomes the index its id carries without the
+// page taking the id apart. NeedUpdate is left to the caller, which sets it once for the whole
+// switch the way the hand-written arms beside these do.
+Text SelectIdsCases(Text _IdPrefix, Text _Variable, Integer _Count)
+{
+    declare Cases = "";
+    for (Index, 0, _Count - 1) {
+        declare SlotId = _IdPrefix ^ Index;
+        declare Value = ""^Index;
+        Cases ^= """
+                            case "{{{SlotId}}}": {{{_Variable}}} = {{{Value}}};
+        """;
+    }
+    return Cases;
 }
 
 Text Select5(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _Option4, Text _Option5, Text _Selector)
@@ -950,10 +1005,14 @@ Void EditMap()
     declare EnabledLB for ManialinkPage = Meta_LB_Enabled;
     declare Speed_Tier for ManialinkPage = Meta_Speed;
 
+    // Read off the constant into a local: .count is not readable off the constant itself, and the
+    // picker's three halves all size themselves off this one list.
+    declare SpeedTierLabels = Constants::C_SpeedTierLabels;
+
     /// --- Manialink
     declare Properties = """
         <frame id="Speed" pos="0 20">
-            {{{BigProperty("0 0", "Speed", Select4Ids("0 -3.5", "Speed_Tier", ["0.1", "1", "10", "100"], "Speed_Selector"))}}}
+            {{{BigProperty("0 0", "Speed", SelectIds("0 -3.5", "Speed_Tier", SpeedTierLabels, "Speed_Selector"))}}}
         </frame>
 
         <frame id="Settings" pos="0 4">
@@ -982,6 +1041,8 @@ Void EditMap()
     #Include "TextLib" as TL
     #Include "MathLib" as ML
 
+{{{SelectIdsUpdate(SpeedTierLabels.count)}}}
+
     Void UpdateView() {
         declare Boolean PvP_Weapons for Page;
         declare Boolean PvP_Collisions for Page;
@@ -997,7 +1058,6 @@ Void EditMap()
         declare Label_ForceFastRS <=> (Page.GetFirstChild("Checkbox_ForceFastRS") as CMlLabel);
         declare Entry_Invulnerability <=> (Page.GetFirstChild("Entry_Invulnerability") as CMlEntry);
         declare Label_LB_Enabled <=> (Page.GetFirstChild("Checkbox_LB_Enabled") as CMlLabel);
-        declare Quad_Speed_Selector <=> (Page.GetFirstChild("Speed_Selector") as CMlQuad);
 
         if (!EnabledLB && Label_LB_Enabled.Value != "") {
             Label_LB_Enabled.SetText("");
@@ -1037,8 +1097,7 @@ Void EditMap()
             Label_ForceFastRS.SetText("");
         }
 
-        // Slot geometry comes from Select4Ids: first slot at -30, one slot every 15 units
-        Quad_Speed_Selector.RelativePosition_V3.X = -30. + Speed_Tier*15.;
+        SetSelectIds("Speed_Selector", Speed_Tier);
         Entry_Invulnerability.SetText(TL::ToText(Invulnerability), False);
 
         SendCustomEvent("Event_Save_Map", Text[]);
@@ -1089,11 +1148,8 @@ Void EditMap()
                             case "Checkbox_LB_Enabled":
                                 EnabledLB = !EnabledLB;
 
-                            // Ids come from Select4Ids, so a slot's suffix is the tier itself
-                            case "Speed_Tier0" : Speed_Tier = 0;
-                            case "Speed_Tier1" : Speed_Tier = 1;
-                            case "Speed_Tier2" : Speed_Tier = 2;
-                            case "Speed_Tier3" : Speed_Tier = 3;
+                            // Ids come from SelectIds, so a slot's suffix is the tier itself
+{{{SelectIdsCases("Speed_Tier", "Speed_Tier", SpeedTierLabels.count)}}}
                         }
 
                         NeedUpdate = True;
@@ -1139,7 +1195,8 @@ Void SaveMapSettings()
     Meta_ForceFastRS = ForceFastRS;
     Meta_Invulnerability = Invulnerability;
     Meta_LB_Enabled = EnabledLB;
-    // Clamped here so the mode can apply what it reads without checking.
+    // Clamped against the models rather than the picker's labels: what the mode can load is the
+    // real limit, and the two lists are meant to be the same length anyway (see C_SpeedTierLabels).
     declare SpeedModels = Constants::C_SpeedModels;	// .count is not readable off the constant itself
     Meta_Speed = ML::Clamp(Speed_Tier, 0, SpeedModels.count - 1);
 }
