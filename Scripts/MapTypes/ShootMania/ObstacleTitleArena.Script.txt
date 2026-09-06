@@ -108,7 +108,7 @@ Text GetStylesheet()
 Text LittleButton(Text _Position, Text _Text, Text _Name, Text _Size, Text _FocusBgColor)
 {
     return """
-        <frame pos="{{{_Position}}}}">
+        <frame pos="{{{_Position}}}">
             <label id="{{{_Name}}}" size="{{{_Size}}}" halign="center" valign="center2" scriptevents="1"
                 text="{{{_Text}}}" focusareacolor1="797979AA" focusareacolor2="{{{_FocusBgColor}}}" textcolor="FFFFFFFF" />
         </frame>
@@ -128,7 +128,7 @@ Text LittleButton(Text _Position, Text _Text, Text _Name)
 Text Select2(Text _Position, Text _Option1, Text _Option2, Text _Selector)
 {
     return """
-        <frame pos="{{{_Position}}}}">
+        <frame pos="{{{_Position}}}">
             <frame clip="True" clipposn="0 -2.5" clipsizen="60 5" halign="center">
                 <label id="{{{_Option1}}}"  pos="-10 -2" size="20 6" text="{{{_Option1}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
                 <label id="{{{_Option2}}}"  pos="10 -2"  size="20 6" text="{{{_Option2}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
@@ -142,7 +142,7 @@ Text Select2(Text _Position, Text _Option1, Text _Option2, Text _Selector)
 Text Select3(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _Selector)
 {
     return """
-        <frame pos="{{{_Position}}}}">
+        <frame pos="{{{_Position}}}">
             <frame clip="True" clipposn="0 -2.5" clipsizen="60 5" halign="center">
                 <label id="{{{_Option1}}}"  pos="-20 -2" size="20 6" text="{{{_Option1}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
                 <label id="{{{_Option2}}}"  pos="0 -2"   size="20 6" text="{{{_Option2}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
@@ -157,7 +157,7 @@ Text Select3(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _
 Text Select4(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _Option4, Text _Selector)
 {
     return """
-        <frame pos="{{{_Position}}}}">
+        <frame pos="{{{_Position}}}">
             <frame clip="True" clipposn="0 -2.5" clipsizen="80 5" halign="center">
                 <label id="{{{_Option1}}}"  pos="-30 -2"  size="20 6" text="{{{_Option1}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
                 <label id="{{{_Option2}}}"  pos="-10 -2"  size="20 6" text="{{{_Option2}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
@@ -252,7 +252,7 @@ Text SelectIdsCases(Text _IdPrefix, Text _Variable, Integer _Count)
 Text Select5(Text _Position, Text _Option1, Text _Option2, Text _Option3, Text _Option4, Text _Option5, Text _Selector)
 {
     return """
-        <frame pos="{{{_Position}}}}">
+        <frame pos="{{{_Position}}}">
             <frame clip="True" clipposn="0 -2.5" clipsizen="80 5" halign="center">
                 <label id="{{{_Option1}}}"  pos="-32 -2"  size="16 6" text="{{{_Option1}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
                 <label id="{{{_Option2}}}"  pos="-16 -2"  size="16 6" text="{{{_Option2}}}" halign="center" valign="center" textsize="2" class="text" scriptevents="1"/>
