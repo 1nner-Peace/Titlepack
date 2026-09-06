@@ -2966,16 +2966,21 @@ Void CenterOnAnchor(CAnchorData _Anchor)
 
 }
 
+// Load the source anchor's weapon page into the page variables, which the paste then saves onto
+// the target. Every field SaveWeaponVariables writes has to be read back here: the paste saves the
+// whole page, so a field this function skips is not left alone on the target - it is overwritten
+// with whatever the last opened dialog left in the page store.
 Void CopyWeapon(Ident _AnchorId)
 {
     declare Anchor <=> AnchorData[_AnchorId];
-    
+
     declare Integer Weapon for ManialinkPage;
     declare Real Weapon_Gain for ManialinkPage;
     declare Integer Weapon_Amount for ManialinkPage;
     declare Integer Stamina for ManialinkPage;
     declare Real Stamina_Gain for ManialinkPage;
     declare Real Stamina_Amount for ManialinkPage;
+    declare Real Speed_Power for ManialinkPage;
 
     declare metadata Meta_Weapon for Anchor = 1;
     declare metadata Meta_Weapon_Gain for Anchor = 1.0;
@@ -2983,6 +2988,7 @@ Void CopyWeapon(Ident _AnchorId)
     declare metadata Meta_Stamina for Anchor = 0;
     declare metadata Meta_Stamina_Gain for Anchor = 1.0;
     declare metadata Meta_Stamina_Amount for Anchor = 1.0;
+    declare metadata Meta_SpeedPower for Anchor = Constants::C_SpeedDefaultPower;
 
     Weapon = Meta_Weapon;
     Weapon_Gain = Meta_Weapon_Gain;
@@ -2990,6 +2996,7 @@ Void CopyWeapon(Ident _AnchorId)
     Stamina = Meta_Stamina;
     Stamina_Gain = Meta_Stamina_Gain;
     Stamina_Amount = Meta_Stamina_Amount;
+    Speed_Power = Meta_SpeedPower;
 }
 
 Void PasteCheckpoint(Ident _AnchorId)
