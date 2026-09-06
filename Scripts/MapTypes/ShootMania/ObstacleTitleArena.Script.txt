@@ -1629,6 +1629,7 @@ Void EditCheckpoint(CAnchorData _Checkpoint)
     {{{GetML()}}}
     <script><!--
     #Include "TextLib" as TL
+    #Include "MathLib" as ML
 
     Void UpdateView() {
         declare Boolean Enabled for Page;
@@ -1919,6 +1920,7 @@ Void EditSpawn(CAnchorData _Spawn)
     {{{GetML()}}}
     <script><!--
     #Include "TextLib" as TL
+    #Include "MathLib" as ML
 
     Void UpdateView() {
         declare Boolean Enabled for Page;
