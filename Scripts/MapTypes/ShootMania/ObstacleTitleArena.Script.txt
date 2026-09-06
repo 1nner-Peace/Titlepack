@@ -1013,24 +1013,24 @@ Void EditMap()
     /// --- Manialink
     declare Properties = """
         <frame id="Speed" pos="0 20">
-            {{{BigProperty("0 0", "Speed", SelectIds("0 -3.5", "Speed_Tier", SpeedTierLabels, "Speed_Selector"))}}}
+            {{{BigProperty("0 0", "Speed", SelectIds("0 -4.5", "Speed_Tier", SpeedTierLabels, "Speed_Selector"))}}}
         </frame>
 
-        <frame id="Settings" pos="0 4">
-            {{{BigProperty("0 0", "Settings to enable", "")}}}
+        <frame id="Settings" pos="0 2.5">
+            {{{BigProperty("0 -0.5", "Settings to enable", "")}}}
             {{{Property("-20 -7.5", "PvP Weapons", Checkbox("13 0", "Checkbox_PvP_Weapons"))}}}
             {{{Property("12.5 -7.5", "PvP Collisions", Checkbox("13 0", "Checkbox_PvP_Collisions"))}}}
             {{{Property("-20 -15", "Same-Wall WJ", Checkbox("13 0", "Checkbox_SameWallJump"))}}}
             {{{Property("-20 -22.5", "Fast Respawn", Checkbox("13 0", "Checkbox_ForceFastRS"))}}}
         </frame>
 
-        <frame id="Invulnerability" pos="0 -28">
+        <frame id="Invulnerability" pos="0 -30">
             {{{BigProperty("0 0", "Weapon Ready Delay", Entry("0 -7.5", "Entry_Invulnerability"))}}}
         </frame>
 
-        <frame id="Leaderboard" pos="0 -46">
+        <frame id="Leaderboard" pos="0 -48">
             {{{BigProperty("0 0", "Leaderboard", "")}}}
-            {{{Property("0 -7.5", "Enabled", Checkbox("13 0", "Checkbox_LB_Enabled"))}}}
+            {{{Property("0 -6.5", "Enabled", Checkbox("13 0", "Checkbox_LB_Enabled"))}}}
         </frame>
     """;
 
