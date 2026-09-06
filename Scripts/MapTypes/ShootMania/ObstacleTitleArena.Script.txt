@@ -552,8 +552,9 @@ Text PropertyOrder(Text _Position)
  * paste, and test are the header of a waypoint dialog; back belongs to a sub-window, and takes
  * the copy button's place because no dialog carries both.
  *
- * Two heights are in use: 115 for an ordinary dialog, and 134 for the ones carrying the launch
- * row, which has to fit under the stamina block.
+ * Three heights are in use: 115 for an ordinary dialog, 134 for the launch sub-window, and 154 for
+ * the waypoint dialogs, which have to fit the speed row and the action-key row under the stamina
+ * block.
  */
 Text MakeWindowBase(Text _Title, Text _Content, Boolean _WithEnabled, Boolean _WithCopyPaste, Boolean _WithTest, Boolean _WithBack, Integer _Height)
 {
