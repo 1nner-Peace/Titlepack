@@ -12,7 +12,7 @@
 #Const C_ItemAmmo "Obstacle\\Ammo.Item.gbx"
 #Const C_InvisibleSkin "Skins\\Models\\ArenaPlayer\\Invisible.zip"
 // Player speed: SpeedPower only scales down (0.1-1.0, doc.h:9041), so the ceiling is raised by
-// forcing a character item instead - a bot derived from ArenaPlayer carries gameplay params, and
+// forcing a character item instead - one derived from ArenaPlayer carries gameplay params, and
 // ForceModelId applies them to a real player. The invisible skin is baked into each item because
 // ForceModelId is a single slot a forced skin would otherwise contend for.
 //
@@ -29,10 +29,10 @@
 #Const C_SpeedDefaultPower 1.0				// all of the map's speed: what a section that asks for nothing runs at
 // The C_SpeedTierNormal slot is empty on purpose (see above); loaders skip it but keep its index.
 #Const C_SpeedModels [
-    "InvisibleBotSpeed01.Item.Gbx",		// 0.1
-    "",									// 1
-    "InvisibleBotSpeed10.Item.Gbx",		// 10
-    "InvisibleBotSpeed100.Item.Gbx"		// 100
+    "Characters\\CharacterSpeed01.Item.Gbx",	// 0.1
+    "",											// 1
+    "Characters\\CharacterSpeed10.Item.Gbx",	// 10
+    "Characters\\CharacterSpeed100.Item.Gbx"	// 100
 ]
 // What the editor's picker shows for each tier. Index-parallel with C_SpeedModels: the two are one
 // list in two halves, so a tier added to either needs the same slot in the other. The picker sizes

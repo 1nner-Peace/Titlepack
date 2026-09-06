@@ -218,20 +218,20 @@ ItemList_Begin();
 G_InvisibleSkinId = ItemList_AddWithSkin("DefaultPlayerModel", Constants::C_InvisibleSkin);
 // A tier keeps its index even when it loads nothing, so the empty normal-tier slot still takes
 // one up: Player::SetSpeedMapTier indexes the table by tier. Player owns it from here on.
-declare Ident[] SpeedBotModelIds = [];
+declare Ident[] SpeedModelIds = [];
 foreach (SpeedModel in Constants::C_SpeedModels) {
     if (SpeedModel == "") {
-        SpeedBotModelIds.add(NullId);
+        SpeedModelIds.add(NullId);
         continue;
     }
 
     declare SpeedModelId = ItemList_Add(SpeedModel);
     if (SpeedModelId == NullId) {
-        log("[Obstacle] Could not load the speed bot model: "^SpeedModel);
+        log("[Obstacle] Could not load the speed character model: "^SpeedModel);
     }
-    SpeedBotModelIds.add(SpeedModelId);
+    SpeedModelIds.add(SpeedModelId);
 }
-Player::SetSpeedModelIds(SpeedBotModelIds);
+Player::SetSpeedModelIds(SpeedModelIds);
 Items::LoadItems();
 ItemList_End();
 ***

@@ -44,10 +44,11 @@
   GLOBALS
  *********************************************/
 
-// Speed tier -> the bot item forcing that tier's SpeedCoef, indexed by Constants::C_SpeedModels.
-// Only the mode can fill this: the Idents come from ItemList_Add, which is legal only inside the
-// ItemList_Begin/End of Match_InitServer. It lives here because this is the one library both
-// Weapons and ObstacleLib can see (Items already includes ObstacleLib, so it cannot be used).
+// Speed tier -> the character item forcing that tier's SpeedCoef, indexed by
+// Constants::C_SpeedModels. Only the mode can fill this: the Idents come from ItemList_Add, which
+// is legal only inside the ItemList_Begin/End of Match_InitServer. It lives here because this is
+// the one library both Weapons and ObstacleLib can see (Items already includes ObstacleLib, so it
+// cannot be used).
 declare Ident[] G_SpeedModelIds;
 
 // The one model the whole map wears, settled once per map by SetSpeedMapTier because a model's
